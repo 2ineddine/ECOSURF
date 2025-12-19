@@ -12,7 +12,7 @@ class PeriodSelectionDialog(QDialog):
         self.setWindowTitle("Select Time Period")
         self.metadata = metadata
         self.audio_duration = audio_duration
-
+        
         layout = QVBoxLayout()
 
         info_label = QLabel(
@@ -58,7 +58,11 @@ class PeriodSelectionDialog(QDialog):
 
         range_group.setLayout(range_layout)
         layout.addWidget(range_group)
+        self.full_radio.toggled.connect(lambda checked: range_group.setEnabled(not checked))
+        range_group.setEnabled(False)
 
+        #self.full_radio.toggled.connect(lambda checked: range_group.setEnabled(not checked))
+        range_group.setEnabled(False)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)

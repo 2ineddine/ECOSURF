@@ -31,7 +31,7 @@ class SpectrogramWidget(QWidget):
         self.zoom_freq_range = None
 
         self.playback_position = None
-
+        
         # Margins for axes
         self.left_margin = 80
         self.bottom_margin = 50
