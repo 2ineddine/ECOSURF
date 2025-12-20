@@ -46,13 +46,17 @@ class SpectrogramWidget(QWidget):
         self.times = times
         self.time_offset = time_offset
 
+        # FIX 1: Reset viewport duration to match the clip
+        if times is not None and len(times) > 1:
+            self.viewport_duration = times[-1]  # exact duration of the clip
+
         self.viewport_start = 0.0
         self.zoomed = False
         self.zoom_time_range = None
         self.zoom_freq_range = None
         self.playback_position = None
 
-        if spec_data is not None:
+        if spec_data is not None and len(times)>1:
             height, width = spec_data.shape
             self.mask = np.zeros((height, width), dtype=np.uint8)
 
@@ -77,36 +81,54 @@ class SpectrogramWidget(QWidget):
         return start_idx, end_idx
 
     def update_display(self):
-        if self.spectrogram is None:
+        if self.spectrogram is None or self.frequencies is None or self.times is None:
             return
 
+        # ---- Get current viewport indices ----
         start_idx, end_idx = self.get_viewport_indices()
-        if start_idx is None:
+        if start_idx is None or end_idx is None:
             return
 
+        # ---- Extract spectrogram slice for viewport ----
         if self.zoomed and self.zoom_freq_range:
             freq_start, freq_end = self.zoom_freq_range
             viewport_spec = self.spectrogram[freq_start:freq_end, start_idx:end_idx]
         else:
             viewport_spec = self.spectrogram[:, start_idx:end_idx]
 
+        if viewport_spec.size == 0:
+            return
+
+        # Flip vertically for display (low freq at bottom)
         viewport_spec = np.flipud(viewport_spec)
-        height, width = viewport_spec.shape
+        viewport_height, viewport_width = viewport_spec.shape
+
+        # ---- Convert spectrogram to RGB image ----
         colored = self.apply_colormap(viewport_spec)
+        image = QImage(colored.data, viewport_width, viewport_height, viewport_width * 3, QImage.Format.Format_RGB888)
+        full_pixmap = QPixmap.fromImage(image)
 
-        image = QImage(colored.data, width, height, width * 3, QImage.Format.Format_RGB888)
-        self.full_pixmap = QPixmap.fromImage(image)
-
+        # ---- Compute display size proportional to time range ----
         available_width = self.width() - self.left_margin - 10
         available_height = self.height() - self.top_margin - self.bottom_margin
 
-        self.display_pixmap = self.full_pixmap.scaled(
-            available_width, available_height,
+        # Width scaled to proportion of total spectrogram
+        total_time_bins = self.spectrogram.shape[1]
+        num_time_bins = end_idx - start_idx
+        scale_fraction = num_time_bins / total_time_bins
+        scaled_width = max(1, int(available_width * scale_fraction))
+
+        self.display_pixmap = full_pixmap.scaled(
+            scaled_width, available_height,
             Qt.AspectRatioMode.IgnoreAspectRatio,
             Qt.TransformationMode.SmoothTransformation
         )
 
+        # Store full_pixmap for mask overlay drawing
+        self.full_pixmap = full_pixmap
+
         self.update()
+
 
     def apply_colormap(self, data):
         colored = np.zeros((*data.shape, 3), dtype=np.uint8)
@@ -119,85 +141,120 @@ class SpectrogramWidget(QWidget):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(255, 255, 255))
 
-        if self.display_pixmap:
-            painter.drawPixmap(self.left_margin, self.top_margin, self.display_pixmap)
+        if not self.display_pixmap:
+            return
 
-            painter.setPen(QPen(QColor(0, 0, 0), 1))
-            font = QFont("Arial", 9)
-            painter.setFont(font)
+        # Draw the spectrogram image
+        painter.drawPixmap(self.left_margin, self.top_margin, self.display_pixmap)
 
-            start_idx, end_idx = self.get_viewport_indices()
-            if start_idx is not None:
-                if self.zoomed and self.zoom_time_range:
-                    time_start = self.zoom_time_range[0]
-                    time_end = self.zoom_time_range[1]
-                else:
-                    time_start = self.viewport_start
-                    time_end = min(self.viewport_start + self.viewport_duration, self.times[-1])
+        # Prepare font
+        painter.setPen(QPen(QColor(0, 0, 0), 1))
+        painter.setFont(QFont("Arial", 9))
 
-                num_time_ticks = 5
-                for i in range(num_time_ticks + 1):
-                    fraction = i / num_time_ticks
-                    time_val = time_start + (time_end - time_start) * fraction
-                    x_pos = self.left_margin + int(self.display_pixmap.width() * fraction)
-                    painter.drawText(x_pos - 20, self.height() - 5, f"{time_val + self.time_offset:.1f}s")
+        # ---- Retrieve viewport indices ----
+        start_idx, end_idx = self.get_viewport_indices()
+        if start_idx is None:
+            return
 
-                painter.drawText(self.width() // 2 - 20, self.height() - 25, "Time")
+        # FIX 3: Recompute viewport_spec for frequency axis calculations
+        if self.zoomed and self.zoom_freq_range:
+            freq_start, freq_end = self.zoom_freq_range
+            viewport_spec = self.spectrogram[freq_start:freq_end, start_idx:end_idx]
+        else:
+            viewport_spec = self.spectrogram[:, start_idx:end_idx]
 
-                if self.zoomed and self.zoom_freq_range:
-                    freq_start = self.frequencies[self.zoom_freq_range[0]]
-                    freq_end = self.frequencies[self.zoom_freq_range[1]]
-                else:
-                    freq_start = self.frequencies[0]
-                    freq_end = self.frequencies[-1]
+        viewport_spec = np.flipud(viewport_spec)
+        viewport_height, viewport_width = viewport_spec.shape
 
-                num_freq_ticks = 6
-                for i in range(num_freq_ticks + 1):
-                    fraction = i / num_freq_ticks
-                    freq_val = freq_start + (freq_end - freq_start) * (1 - fraction)
-                    y_pos = self.top_margin + int(self.display_pixmap.height() * fraction)
-                    painter.drawText(5, y_pos + 5, f"{freq_val:.0f}")
+        # ---- TIME AXIS ----
+        # FIX 4: Use zoom_time_range when zoomed
+        if self.zoomed and self.zoom_time_range:
+            time_start, time_end = self.zoom_time_range
+        else:
+            time_start = self.viewport_start
+            total_duration = self.times[-1] if self.times is not None else 0
+            time_end = min(self.viewport_start + self.viewport_duration, total_duration)
 
-                painter.save()
-                painter.translate(10, self.height() // 2)
-                painter.rotate(-90)
-                painter.drawText(-40, 0, "Frequency (Hz)")
-                painter.restore()
+        num_time_ticks = 5
+        for i in range(num_time_ticks + 1):
+            fraction = i / num_time_ticks
+            # Calculate time value within the current viewport
+            time_val = time_start + fraction * (time_end - time_start)
+            
+            # FIX 2: Apply offset only when displaying text
+            x_pos = self.left_margin + int(self.display_pixmap.width() * fraction)
+            text = f"{time_val + self.time_offset:.1f}s"
+            painter.drawText(x_pos - 20, self.height() - 5, text)
 
-            if self.playback_position is not None and not self.zoomed:
-                if self.viewport_start <= self.playback_position <= self.viewport_start + self.viewport_duration:
-                    relative_pos = (self.playback_position - self.viewport_start) / self.viewport_duration
-                    x_pos = self.left_margin + int(relative_pos * self.display_pixmap.width())
+        painter.drawText(self.width() // 2 - 20, self.height() - 25, "Time")
 
-                    painter.setPen(QPen(QColor(255, 0, 0), 2))
-                    painter.drawLine(x_pos, self.top_margin, x_pos, self.top_margin + self.display_pixmap.height())
+        # ---- FREQUENCY AXIS ----
+        # FIX 3: Correct frequency axis with proper mapping
+        num_freq_ticks = 6
+        for i in range(num_freq_ticks + 1):
+            fraction = i / num_freq_ticks
+            pixel_row = int(fraction * viewport_spec.shape[0])
+            
+            # Invert because flipped
+            spec_index = viewport_spec.shape[0] - 1 - pixel_row
+            
+            # Map viewport pixel → frequency index
+            if self.zoomed and self.zoom_freq_range:
+                freq_index = self.zoom_freq_range[0] + spec_index
+            else:
+                freq_index = spec_index
+            
+            # Ensure index is within bounds
+            freq_index = max(0, min(freq_index, len(self.frequencies) - 1))
+            freq_val = self.frequencies[freq_index]
+            
+            y_pos = self.top_margin + pixel_row
+            painter.drawText(5, y_pos + 5, f"{freq_val:.0f} Hz")
 
-            if self.zoom_rect and self.zoom_enabled:
-                painter.setPen(QPen(QColor(255, 255, 0), 2))
-                painter.drawRect(self.zoom_rect)
+        # Label
+        painter.save()
+        painter.translate(20, self.height() // 2)
+        painter.rotate(-90)
+        painter.drawText(0, 0, "Frequency (Hz)")
+        painter.restore()
 
-            if self.mask is not None and np.any(self.mask):
-                start_idx, end_idx = self.get_viewport_indices()
-                if start_idx is not None:
-                    if self.zoomed and self.zoom_freq_range:
-                        freq_start, freq_end = self.zoom_freq_range
-                        viewport_mask = self.mask[freq_start:freq_end, start_idx:end_idx]
-                    else:
-                        viewport_mask = self.mask[:, start_idx:end_idx]
+        # ---- Playback cursor ----
+        if self.playback_position is not None and not self.zoomed:
+            if self.viewport_start <= self.playback_position <= self.viewport_start + self.viewport_duration:
+                relative_pos = (self.playback_position - self.viewport_start) / self.viewport_duration
+                x_pos = self.left_margin + int(relative_pos * self.display_pixmap.width())
 
-                    viewport_mask = np.flipud(viewport_mask)
+                painter.setPen(QPen(QColor(255, 0, 0), 2))
+                painter.drawLine(x_pos, self.top_margin, x_pos, self.top_margin + self.display_pixmap.height())
 
-                    mask_colored = np.zeros((*viewport_mask.shape, 4), dtype=np.uint8)
-                    mask_colored[viewport_mask > 0] = [255, 255, 0, 100]
+        # ---- Zoom Rectangle ----
+        if self.zoom_rect and self.zoom_enabled:
+            painter.setPen(QPen(QColor(255, 255, 0), 2))
+            painter.drawRect(self.zoom_rect)
 
-                    mask_image = QImage(mask_colored.data, viewport_mask.shape[1], viewport_mask.shape[0],
-                                    viewport_mask.shape[1] * 4, QImage.Format.Format_RGBA8888)
-                    mask_pixmap = QPixmap.fromImage(mask_image).scaled(
-                        self.display_pixmap.width(), self.display_pixmap.height(),
-                        Qt.AspectRatioMode.IgnoreAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
-                    )
-                    painter.drawPixmap(self.left_margin, self.top_margin, mask_pixmap)
+        # ---- Mask Overlay ----
+        if self.mask is not None and np.any(self.mask):
+            if self.zoomed and self.zoom_freq_range:
+                freq_start, freq_end = self.zoom_freq_range
+                viewport_mask = self.mask[freq_start:freq_end, start_idx:end_idx]
+            else:
+                viewport_mask = self.mask[:, start_idx:end_idx]
+
+            viewport_mask = np.flipud(viewport_mask)
+
+            mask_colored = np.zeros((*viewport_mask.shape, 4), dtype=np.uint8)
+            mask_colored[viewport_mask > 0] = [255, 255, 0, 100]
+
+            mask_image = QImage(mask_colored.data, viewport_mask.shape[1], viewport_mask.shape[0],
+                                viewport_mask.shape[1] * 4, QImage.Format.Format_RGBA8888)
+            mask_pixmap = QPixmap.fromImage(mask_image).scaled(
+                self.display_pixmap.width(), self.display_pixmap.height(),
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+
+            painter.drawPixmap(self.left_margin, self.top_margin, mask_pixmap)
+
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -306,14 +363,15 @@ class SpectrogramWidget(QWidget):
 
         spec_x = int((adjusted_x / self.display_pixmap.width()) * (end_idx - start_idx)) + start_idx
 
+        # FIX 5: Correct brush drawing mapping
+        display_h = self.display_pixmap.height()
+        data_fraction = 1 - (adjusted_y / display_h)
+        
         if self.zoomed and self.zoom_freq_range:
-            zoom_freq_start, zoom_freq_end = self.zoom_freq_range
-            zoom_freq_height = zoom_freq_end - zoom_freq_start
-            display_height = self.display_pixmap.height()
-            data_fraction = 1 - (adjusted_y / display_height)
-            spec_y = zoom_freq_start + int(data_fraction * zoom_freq_height)
+            start_f, end_f = self.zoom_freq_range
+            spec_y = start_f + int(data_fraction * (end_f - start_f))
         else:
-            spec_y = int((1 - adjusted_y / self.display_pixmap.height()) * self.mask.shape[0])
+            spec_y = int(data_fraction * self.mask.shape[0])
 
         spec_x = max(0, min(spec_x, self.mask.shape[1] - 1))
         spec_y = max(0, min(spec_y, self.mask.shape[0] - 1))
@@ -372,3 +430,84 @@ class SpectrogramWidget(QWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.update_display()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"""
+def mouseMoveEvent(self, event):
+    # Update mouse coordinates for tooltip display
+    if self.spectrogram is not None and self.display_pixmap is not None:
+        x = event.x() - self.left_margin
+        y = event.y() - self.top_margin
+
+        if 0 <= x < self.display_pixmap.width() and 0 <= y < self.display_pixmap.height():
+            start_idx, end_idx = self.get_viewport_indices()
+            if start_idx is not None:
+                # Map x -> time
+                fraction_x = x / self.display_pixmap.width()
+                if self.zoomed and self.zoom_time_range:
+                    time_start, time_end = self.zoom_time_range
+                else:
+                    time_start = self.viewport_start
+                    time_end = min(self.viewport_start + self.viewport_duration, self.times[-1])
+                time_val = time_start + fraction_x * (time_end - time_start)
+                self.mouse_time = time_val + self.time_offset
+
+                # Map y -> frequency
+                fraction_y = 1 - (y / self.display_pixmap.height())
+                if self.zoomed and self.zoom_freq_range:
+                    freq_start, freq_end = self.zoom_freq_range
+                    freq_index = freq_start + int(fraction_y * (freq_end - freq_start))
+                else:
+                    freq_index = int(fraction_y * self.mask.shape[0])
+                freq_index = max(0, min(freq_index, len(self.frequencies)-1))
+                self.mouse_freq = self.frequencies[freq_index]
+        else:
+            self.mouse_time = None
+            self.mouse_freq = None
+
+    self.update()  # trigger paintEvent
+
+    
+
+
+
+# updat pain event 
+
+# ---- Mouse coordinates display ----
+if self.mouse_time is not None and self.mouse_freq is not None:
+    painter.setPen(QPen(QColor(0, 0, 255), 1))
+    font = painter.font()
+    font.setBold(True)
+    painter.setFont(font)
+    text = f"Time: {self.mouse_time:.3f}s, Freq: {self.mouse_freq:.1f} Hz"
+    painter.drawText(self.left_margin, self.height() - 25, text)
+
+    
+# add to __init__
+        self.mouse_time = None
+        self.mouse_freq = None
+
+
+
+
+"""
