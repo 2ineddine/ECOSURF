@@ -8,9 +8,14 @@ from PyQt6.QtWidgets import (
     QFileDialog, QSlider, QSpinBox, QProgressBar, QListWidget,
     QSplitter, QGroupBox, QComboBox, QCheckBox, QScrollBar, QScrollArea
 )
+from PyQt6.QtGui import QKeySequence
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QCursor
 import soundfile as sf
+import librosa
+import tempfile
+import subprocess
+import platform
 
 from ui.components.spectrogram_widget import SpectrogramWidget
 from ui.dialogs.period_selection import PeriodSelectionDialog
@@ -37,6 +42,11 @@ class MainWindow(QMainWindow):
         self.playback_start_time = 0
 
         self.sidebar_visible = True
+
+        # Selection audio storage
+        self.selection_audio = None
+        self.selection_meta = None
+        self.playing_selection = False
 
         self.init_ui()
 
@@ -177,6 +187,20 @@ class MainWindow(QMainWindow):
         clear_btn.clicked.connect(self.clear_selection)
         brush_layout.addWidget(clear_btn)
 
+        extract_sel_btn = QPushButton("Extract Selection")
+        extract_sel_btn.clicked.connect(self.extract_selection)
+        brush_layout.addWidget(extract_sel_btn)
+
+        self.select_play_btn = QPushButton("▶ Play Selection")
+        self.select_play_btn.clicked.connect(self.play_selection_segment)
+        self.select_play_btn.setEnabled(False)
+        brush_layout.addWidget(self.select_play_btn)
+
+        self.save_sel_btn = QPushButton("Save Selection")
+        self.save_sel_btn.clicked.connect(self.save_selection)
+        self.save_sel_btn.setEnabled(False)
+        brush_layout.addWidget(self.save_sel_btn)
+
         brush_group.setLayout(brush_layout)
         controls_layout.addWidget(brush_group)
 
@@ -242,6 +266,16 @@ class MainWindow(QMainWindow):
         self.sidebar_scroll = scroll
 
         self.spectrogram_widget = SpectrogramWidget()
+        # react to widget's scrollable state
+        try:
+            self.spectrogram_widget.scrollableChanged.connect(lambda v: self.viewport_scroll.setEnabled(v))
+        except Exception:
+            pass
+        # when widget selection rectangle is finished, auto-extract the selection
+        try:
+            self.spectrogram_widget.selectionChanged.connect(lambda: self.on_widget_selection_changed())
+        except Exception:
+            pass
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
@@ -262,6 +296,8 @@ class MainWindow(QMainWindow):
         self.sidebar_animation = QPropertyAnimation(self.sidebar, b"maximumWidth")
         self.sidebar_animation.setDuration(200)
         self.sidebar_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+        # Keyboard shortcuts handled via keyPressEvent to avoid QAction/QShortcut
 
     def toggle_sidebar(self):
         if self.sidebar_visible:
@@ -380,8 +416,11 @@ class MainWindow(QMainWindow):
             self.spectrogram_widget.set_spectrogram(result['spectrogram'], result['frequencies'], result['times'], result['time_offset'])
             self.play_btn.setEnabled(True)
 
-            total_duration = result['times'][-1]
-            self.viewport_scroll.setEnabled(total_duration > 60)
+            total_duration = float(result['times'][-1])
+            # enable scrollbar if clip longer than viewport duration
+            self.viewport_scroll.setEnabled(total_duration > self.spectrogram_widget.viewport_duration)
+            # reset scrollbar to start
+            self.viewport_scroll.setValue(0)
         else:
             self.file_label.setText("Error computing spectrogram")
 
@@ -405,6 +444,9 @@ class MainWindow(QMainWindow):
         self.spectrogram_widget.reset_zoom()
 
     def scroll_viewport(self, value):
+        # Prevent manual scrolling while playback is active
+        if getattr(self, 'playing', False):
+            return
         self.spectrogram_widget.scroll_viewport(value)
 
     def update_brush_size(self, value):
@@ -413,6 +455,105 @@ class MainWindow(QMainWindow):
 
     def clear_selection(self):
         self.spectrogram_widget.clear_mask()
+
+    def extract_selection(self):
+        """Create audio from painted selection using core helper"""
+        try:
+            from core.spectrogram_audio import extract_patch_audio
+        except Exception:
+            self.file_label.setText("Error: missing core.spectrogram_audio module")
+            return
+
+        if self.audio_data is None:
+            self.file_label.setText("Load audio before extracting selection")
+            return
+
+        mask = self.spectrogram_widget.mask
+        if mask is None or not mask.any():
+            self.file_label.setText("No selection painted")
+            return
+
+        n_fft = int(self.fft_combo.currentText())
+        hop_length = int(self.hop_combo.currentText())
+
+        audio = self.audio_data.get('audio')
+        sr = self.audio_data.get('sample_rate')
+
+        # compute STFT for reconstruction
+        try:
+            stft = librosa.stft(audio, n_fft=n_fft, hop_length=hop_length)
+        except Exception as e:
+            self.file_label.setText(f"STFT error: {e}")
+            return
+
+        sel_audio, meta = extract_patch_audio(stft, mask, sr, hop_length=hop_length, n_fft=n_fft, time_offset=self.audio_data.get('time_offset', 0.0))
+
+        if sel_audio is None or len(sel_audio) == 0:
+            self.file_label.setText("No audio could be extracted from selection")
+            return
+
+        self.selection_audio = sel_audio
+        self.selection_meta = meta
+        self.select_play_btn.setEnabled(True)
+        self.save_sel_btn.setEnabled(True)
+        self.file_label.setText(f"Selection extracted: {len(sel_audio)/sr:.2f}s")
+        # show waveform for the extracted selection in the spectrogram widget
+        try:
+            self.spectrogram_widget.show_selection_audio(self.selection_audio, sr)
+        except Exception:
+            pass
+
+    def play_selection_segment(self):
+        if self.selection_audio is None:
+            self.file_label.setText("No extracted selection to play")
+            return
+
+        # Use existing in-process playback thread to play selection
+        try:
+            self.stop_audio()
+        except Exception:
+            pass
+
+        sr = int(self.selection_meta.get('sample_rate', self.audio_data.get('sample_rate')))
+        self.playing = True
+        self.playing_selection = True
+        self.playback_start_time = datetime.now().timestamp()
+        self.audio_thread = threading.Thread(target=self._play_audio_thread, args=(self.selection_audio, sr), daemon=True)
+        self.audio_thread.start()
+
+        self.playback_timer.start(50)
+        self.play_btn.setEnabled(False)
+        self.pause_btn.setEnabled(True)
+        self.stop_btn.setEnabled(True)
+        self.playback_label.setText("Playing selection...")
+        # disable viewport scrollbar while playing selection to avoid accidental sliding
+        try:
+            self.viewport_scroll.setEnabled(False)
+        except Exception:
+            pass
+
+    def save_selection(self):
+        if self.selection_audio is None:
+            self.file_label.setText("No extracted selection to save")
+            return
+
+        default_name = "selection.wav"
+        filename, _ = QFileDialog.getSaveFileName(self, "Save Extracted Selection", default_name, "WAV files (*.wav);;All files (*.*)")
+        if not filename:
+            return
+
+        try:
+            if not filename.lower().endswith('.wav'):
+                filename += '.wav'
+            sf.write(filename, self.selection_audio, int(self.selection_meta.get('sample_rate', self.audio_data.get('sample_rate'))))
+            # Save metadata
+            meta_file = os.path.splitext(filename)[0] + '_selection_info.txt'
+            with open(meta_file, 'w') as f:
+                f.write(str(self.selection_meta))
+
+            self.file_label.setText(f"Saved selection: {filename}")
+        except Exception as e:
+            self.file_label.setText(f"Error saving: {e}")
 
     def play_audio(self):
         if self.audio_data is None:
@@ -433,6 +574,7 @@ class MainWindow(QMainWindow):
         audio_segment = audio[start_sample:end_sample]
 
         self.playing = True
+        self.playing_selection = False
         self.playback_start_time = datetime.now().timestamp()
         self.audio_thread = threading.Thread(target=self._play_audio_thread, args=(audio_segment, sr))
         self.audio_thread.start()
@@ -443,6 +585,11 @@ class MainWindow(QMainWindow):
         self.pause_btn.setEnabled(True)
         self.stop_btn.setEnabled(True)
         self.playback_label.setText("Playing...")
+        # disable viewport scrollbar while playing to prevent user sliding
+        try:
+            self.viewport_scroll.setEnabled(False)
+        except Exception:
+            pass
 
     def _play_audio_thread(self, audio, sr):
         try:
@@ -476,6 +623,18 @@ class MainWindow(QMainWindow):
         self.play_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
         self.playback_label.setText("Paused")
+        # re-enable scrollbar if spectrogram is scrollable
+        try:
+            self.viewport_scroll.setEnabled(self.spectrogram_widget._scrollable)
+        except Exception:
+            pass
+        # if selection playback was paused, update widget selection cursor
+        try:
+            if getattr(self, 'playing_selection', False):
+                elapsed = datetime.now().timestamp() - self.playback_start_time
+                self.spectrogram_widget.set_selection_playback_pos(elapsed)
+        except Exception:
+            pass
 
     def stop_audio(self):
         self.playing = False
@@ -489,14 +648,83 @@ class MainWindow(QMainWindow):
         self.pause_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.playback_label.setText("Stopped")
+        # re-enable scrollbar if spectrogram is scrollable
+        try:
+            self.viewport_scroll.setEnabled(self.spectrogram_widget._scrollable)
+        except Exception:
+            pass
+        # clear selection playback state
+        try:
+            self.playing_selection = False
+            self.spectrogram_widget.set_selection_playback_pos(None)
+        except Exception:
+            pass
+
+    def _space_pressed(self):
+        """Toggle main play/pause (Space)."""
+        if self.playing:
+            self.pause_audio()
+        else:
+            self.play_audio()
+
+    def _shift_space_pressed(self):
+        """Toggle selection play/pause (Shift+Space)."""
+        # If selection exists use selection play/pause, else fallback to main
+        if getattr(self, 'selection_audio', None) is not None:
+            # if currently playing main audio, stop it and play selection
+            if self.playing:
+                self.stop_audio()
+            # play or pause selection via play_selection_segment/pause
+            if self.select_play_btn.isEnabled():
+                # naive toggle: if audio_thread alive then pause
+                if self.audio_thread and self.playing:
+                    self.pause_audio()
+                else:
+                    self.play_selection_segment()
+        else:
+            self._space_pressed()
+
+    def _change_brush_size(self, delta):
+        new_val = max(1, min(200, self.brush_slider.value() + delta))
+        self.brush_slider.setValue(new_val)
+
+    def keyPressEvent(self, event):
+        """Handle keyboard shortcuts without using QAction/QShortcut."""
+        key = event.key()
+        mods = event.modifiers()
+        # Space: main play/pause
+        if key == Qt.Key.Key_Space:
+            if mods & Qt.KeyboardModifier.ShiftModifier:
+                self._shift_space_pressed()
+            else:
+                self._space_pressed()
+            return
+        # R: reset zoom
+        if key == Qt.Key.Key_R:
+            self.reset_zoom()
+            return
+        # - / = : brush size
+        if key == Qt.Key.Key_Minus:
+            self._change_brush_size(-2)
+            return
+        if key == Qt.Key.Key_Equal:
+            self._change_brush_size(+2)
+            return
+        super().keyPressEvent(event)
 
     def update_playback_position(self):
         if not self.playing:
             return
 
         elapsed = datetime.now().timestamp() - self.playback_start_time
-        current_pos = self.spectrogram_widget.viewport_start + elapsed
+        if getattr(self, 'playing_selection', False):
+            # update selection waveform cursor
+            self.spectrogram_widget.set_selection_playback_pos(elapsed)
+            if self.spectrogram_widget.selection_duration and elapsed >= self.spectrogram_widget.selection_duration:
+                self.stop_audio()
+            return
 
+        current_pos = self.spectrogram_widget.viewport_start + elapsed
         self.spectrogram_widget.set_playback_position(current_pos)
 
         if current_pos >= self.spectrogram_widget.viewport_start + self.spectrogram_widget.viewport_duration:
@@ -534,6 +762,16 @@ class MainWindow(QMainWindow):
             self.search_thread.stop()
             self.search_thread.wait()
             self.search_complete()
+
+    def on_widget_selection_changed(self):
+        """Called when the spectrogram widget emits a selectionChanged signal (rectangle painted).
+        Trigger extraction of the painted selection automatically.
+        """
+        try:
+            # automatically extract and display the selection waveform
+            self.extract_selection()
+        except Exception:
+            pass
 
     def update_search_progress(self, value, status):
         self.search_progress.setValue(value)

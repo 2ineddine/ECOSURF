@@ -1,11 +1,13 @@
 import numpy as np
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QCursor, QFont
-from PyQt6.QtCore import Qt, QRect
+from PyQt6.QtCore import Qt, QRect, pyqtSignal
 
 
 class SpectrogramWidget(QWidget):
     """Custom widget for displaying and interacting with spectrograms"""
+    scrollableChanged = pyqtSignal(bool)
+    selectionChanged = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -19,6 +21,18 @@ class SpectrogramWidget(QWidget):
         self.mask = None
         self.last_point = None
         self.brush_enabled = False
+
+        # Rectangle selection for brush (right-button drag)
+        self.rect_select_start = None
+        self.rect_select_rect = None
+
+        # Selection waveform display
+        self.selection_waveform_pixmap = None
+        self.selection_waveform_height = 80
+        self.selection_duration = None
+        self.selection_sr = None
+        self.selection_playback_pos = None
+        self.waveform_visible = False
 
         self.viewport_duration = 60.0
         self.viewport_start = 0.0
@@ -39,6 +53,7 @@ class SpectrogramWidget(QWidget):
 
         self.setMinimumSize(800, 400)
         self.setMouseTracking(True)
+        self._scrollable = False
 
     def set_spectrogram(self, spec_data, frequencies, times, time_offset=0):
         self.spectrogram = spec_data
@@ -46,9 +61,10 @@ class SpectrogramWidget(QWidget):
         self.times = times
         self.time_offset = time_offset
 
-        # FIX 1: Reset viewport duration to match the clip
+        # Default viewport duration: show up to 60s in the first view
         if times is not None and len(times) > 1:
-            self.viewport_duration = times[-1]  # exact duration of the clip
+            total_dur = float(times[-1])
+            self.viewport_duration = min(60.0, total_dur)
 
         self.viewport_start = 0.0
         self.zoomed = False
@@ -60,23 +76,47 @@ class SpectrogramWidget(QWidget):
             height, width = spec_data.shape
             self.mask = np.zeros((height, width), dtype=np.uint8)
 
+        # cached pixmaps for performance
+        self.display_pixmap = None
+        self.mask_pixmap = None
+
         self.update_display()
 
     def get_viewport_indices(self):
         if self.spectrogram is None or self.times is None:
             return None, None
-
         total_duration = self.times[-1]
 
+        # When zoomed we allow a viewport window inside the zoom range
         if self.zoomed and self.zoom_time_range:
-            start_time = self.zoom_time_range[0]
-            end_time = self.zoom_time_range[1]
+            zoom_start, zoom_end = self.zoom_time_range
+            zoom_span = max(0.0, zoom_end - zoom_start)
+
+            if zoom_span <= self.viewport_duration:
+                # show entire zoomed region
+                start_time = zoom_start
+                end_time = zoom_end
+            else:
+                # ensure viewport_start lies inside zoom range
+                max_start = zoom_end - self.viewport_duration
+                # clamp viewport_start between zoom_start and max_start
+                vs = min(max(self.viewport_start, zoom_start), max_start)
+                start_time = vs
+                end_time = vs + self.viewport_duration
         else:
             start_time = self.viewport_start
             end_time = min(self.viewport_start + self.viewport_duration, total_duration)
 
+        # clamp to available times
+        start_time = max(self.times[0], start_time)
+        end_time = min(self.times[-1], end_time)
+
         start_idx = np.searchsorted(self.times, start_time)
         end_idx = np.searchsorted(self.times, end_time)
+
+        # ensure at least one frame
+        if end_idx <= start_idx:
+            end_idx = min(start_idx + 1, len(self.times))
 
         return start_idx, end_idx
 
@@ -103,21 +143,21 @@ class SpectrogramWidget(QWidget):
         viewport_spec = np.flipud(viewport_spec)
         viewport_height, viewport_width = viewport_spec.shape
 
-        # ---- Convert spectrogram to RGB image ----
+        # ---- Convert spectrogram to RGB image and cache it ----
         colored = self.apply_colormap(viewport_spec)
+        colored = np.ascontiguousarray(colored)
         image = QImage(colored.data, viewport_width, viewport_height, viewport_width * 3, QImage.Format.Format_RGB888)
         full_pixmap = QPixmap.fromImage(image)
 
-        # ---- Compute display size proportional to time range ----
+        # ---- Compute display size ----
         available_width = self.width() - self.left_margin - 10
-        available_height = self.height() - self.top_margin - self.bottom_margin
+        # Reserve room for optional selection waveform at the bottom
+        waveform_h = self.selection_waveform_height if self.waveform_visible else 0
+        available_height = self.height() - self.top_margin - self.bottom_margin - waveform_h
 
-        # Width scaled to proportion of total spectrogram
-        total_time_bins = self.spectrogram.shape[1]
-        num_time_bins = end_idx - start_idx
-        scale_fraction = num_time_bins / total_time_bins
-        scaled_width = max(1, int(available_width * scale_fraction))
-
+        # Always fill the available width with the current viewport image
+        # (the image shows only the frames between start_idx and end_idx)
+        scaled_width = max(1, int(available_width))
         self.display_pixmap = full_pixmap.scaled(
             scaled_width, available_height,
             Qt.AspectRatioMode.IgnoreAspectRatio,
@@ -127,6 +167,94 @@ class SpectrogramWidget(QWidget):
         # Store full_pixmap for mask overlay drawing
         self.full_pixmap = full_pixmap
 
+        # Precompute mask pixmap for this viewport for faster paint
+        if self.mask is not None and np.any(self.mask):
+            if self.zoomed and self.zoom_freq_range:
+                freq_start, freq_end = self.zoom_freq_range
+                viewport_mask = self.mask[freq_start:freq_end, start_idx:end_idx]
+            else:
+                viewport_mask = self.mask[:, start_idx:end_idx]
+
+            viewport_mask = np.flipud(viewport_mask)
+            mask_colored = np.zeros((*viewport_mask.shape, 4), dtype=np.uint8)
+            mask_colored[viewport_mask > 0] = [255, 255, 0, 120]
+            mask_colored = np.ascontiguousarray(mask_colored)
+            mask_image = QImage(mask_colored.data, viewport_mask.shape[1], viewport_mask.shape[0], viewport_mask.shape[1] * 4, QImage.Format.Format_RGBA8888)
+            self.mask_pixmap = QPixmap.fromImage(mask_image).scaled(
+                self.display_pixmap.width(), self.display_pixmap.height(),
+                Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
+        else:
+            self.mask_pixmap = None
+
+        # compute whether scrollbar should be enabled: only if total duration exceeds viewport
+        total_duration = float(self.times[-1])
+        zoom_span = 0.0
+        if self.zoomed and self.zoom_time_range:
+            zoom_span = float(self.zoom_time_range[1] - self.zoom_time_range[0])
+
+        scrollable = False
+        if total_duration > self.viewport_duration:
+            # if zoomed and zoomed region is smaller or equal to viewport, no scrolling needed
+            if self.zoomed and zoom_span <= self.viewport_duration:
+                scrollable = False
+            else:
+                scrollable = True
+
+        if scrollable != self._scrollable:
+            self._scrollable = scrollable
+            try:
+                self.scrollableChanged.emit(scrollable)
+            except Exception:
+                pass
+
+        self.update()
+
+    def show_selection_audio(self, audio, sr):
+        """Render a small waveform of the selection and show it below the spectrogram."""
+        try:
+            if audio is None or len(audio) == 0:
+                self.selection_waveform_pixmap = None
+                self.waveform_visible = False
+                self.selection_duration = None
+                self.update()
+                return
+
+            # compute envelope and downsample to display width
+            env = np.abs(audio)
+            # downsample envelope to widget width for fast rendering
+            w = max(200, self.width() - self.left_margin - 10)
+            factor = max(1, int(len(env) / w))
+            env_ds = env.reshape(-1, factor).max(axis=1) if factor > 1 and len(env) >= factor else env
+
+            # normalize to [0,1]
+            env_ds = env_ds / (env_ds.max() + 1e-12)
+
+            hw = int(w)
+            hh = int(self.selection_waveform_height)
+
+            img = np.zeros((hh, hw, 3), dtype=np.uint8) + 255
+            center = hh // 2
+            for x in range(min(hw, len(env_ds))):
+                v = float(env_ds[x])
+                h = int(v * (hh // 2 - 2))
+                img[center - h:center + h, x, :] = 0
+
+            from PyQt6.QtGui import QImage, QPixmap
+            img = np.ascontiguousarray(img)
+            qimg = QImage(img.data, hw, hh, hw * 3, QImage.Format.Format_RGB888)
+            self.selection_waveform_pixmap = QPixmap.fromImage(qimg)
+            self.selection_duration = float(len(audio) / float(sr))
+            self.selection_sr = int(sr)
+            self.selection_playback_pos = None
+            self.waveform_visible = True
+            self.update()
+        except Exception:
+            pass
+
+    def set_selection_playback_pos(self, t):
+        """Set playback position (seconds) for selection waveform."""
+        self.selection_playback_pos = None if t is None else float(t)
         self.update()
 
 
@@ -226,6 +354,9 @@ class SpectrogramWidget(QWidget):
 
                 painter.setPen(QPen(QColor(255, 0, 0), 2))
                 painter.drawLine(x_pos, self.top_margin, x_pos, self.top_margin + self.display_pixmap.height())
+                # also draw marker on time axis
+                painter.setPen(QPen(QColor(255, 0, 0), 1))
+                painter.drawText(x_pos - 20, self.top_margin - 5, f"{self.playback_position:.2f}s")
 
         # ---- Zoom Rectangle ----
         if self.zoom_rect and self.zoom_enabled:
@@ -233,27 +364,30 @@ class SpectrogramWidget(QWidget):
             painter.drawRect(self.zoom_rect)
 
         # ---- Mask Overlay ----
-        if self.mask is not None and np.any(self.mask):
-            if self.zoomed and self.zoom_freq_range:
-                freq_start, freq_end = self.zoom_freq_range
-                viewport_mask = self.mask[freq_start:freq_end, start_idx:end_idx]
-            else:
-                viewport_mask = self.mask[:, start_idx:end_idx]
+        if self.mask_pixmap is not None:
+            painter.drawPixmap(self.left_margin, self.top_margin, self.mask_pixmap)
 
-            viewport_mask = np.flipud(viewport_mask)
+        # ---- Rectangle selection (right-button) ----
+        if self.rect_select_rect is not None and self.brush_enabled:
+            painter.setPen(QPen(QColor(0, 200, 0), 2, Qt.PenStyle.DashLine))
+            painter.drawRect(self.rect_select_rect)
 
-            mask_colored = np.zeros((*viewport_mask.shape, 4), dtype=np.uint8)
-            mask_colored[viewport_mask > 0] = [255, 255, 0, 100]
+        # ---- Selection waveform ----
+        if self.waveform_visible and self.selection_waveform_pixmap is not None:
+            wf_x = self.left_margin
+            wf_y = self.top_margin + self.display_pixmap.height() + 4
+            painter.drawPixmap(wf_x, wf_y, self.selection_waveform_pixmap)
 
-            mask_image = QImage(mask_colored.data, viewport_mask.shape[1], viewport_mask.shape[0],
-                                viewport_mask.shape[1] * 4, QImage.Format.Format_RGBA8888)
-            mask_pixmap = QPixmap.fromImage(mask_image).scaled(
-                self.display_pixmap.width(), self.display_pixmap.height(),
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
+            # draw time axis for waveform
+            painter.setPen(QPen(QColor(0, 0, 0), 1))
+            painter.drawText(wf_x, wf_y + self.selection_waveform_height + 12, "Selection waveform")
 
-            painter.drawPixmap(self.left_margin, self.top_margin, mask_pixmap)
+            # playback position on waveform
+            if self.selection_playback_pos is not None and self.selection_duration and self.selection_duration > 0:
+                frac = max(0.0, min(1.0, self.selection_playback_pos / self.selection_duration))
+                x_pos = wf_x + int(frac * self.selection_waveform_pixmap.width())
+                painter.setPen(QPen(QColor(255, 0, 0), 2))
+                painter.drawLine(x_pos, wf_y, x_pos, wf_y + self.selection_waveform_height)
 
 
     def mousePressEvent(self, event):
@@ -262,8 +396,15 @@ class SpectrogramWidget(QWidget):
                 self.zoom_start = event.pos()
                 self.zoom_rect = QRect(self.zoom_start, self.zoom_start)
             elif self.brush_enabled:
+                # left-button draws with brush
                 self.drawing = True
+                self.last_point = event.pos()
                 self.draw_at(event.pos())
+        elif event.button() == Qt.MouseButton.RightButton and self.brush_enabled:
+            # start rectangle selection with right button while brush enabled
+            self.rect_select_start = event.pos()
+            self.rect_select_rect = QRect(self.rect_select_start, self.rect_select_start)
+            self.update()
 
     def mouseMoveEvent(self, event):
         if self.zoom_enabled and self.zoom_start:
@@ -271,6 +412,10 @@ class SpectrogramWidget(QWidget):
             self.update()
         elif self.brush_enabled and self.drawing:
             self.draw_at(event.pos())
+            self.last_point = event.pos()
+        elif self.rect_select_start is not None:
+            self.rect_select_rect = QRect(self.rect_select_start, event.pos()).normalized()
+            self.update()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -281,6 +426,72 @@ class SpectrogramWidget(QWidget):
             elif self.brush_enabled:
                 self.drawing = False
                 self.last_point = None
+        elif event.button() == Qt.MouseButton.RightButton and self.rect_select_rect is not None:
+            # finalize rectangle selection -> fill mask in that rectangle region
+            try:
+                # map rectangle to spectrogram bins similar to apply_zoom
+                start_idx, end_idx = self.get_viewport_indices()
+                if start_idx is None:
+                    self.rect_select_start = None
+                    self.rect_select_rect = None
+                    return
+
+                display_h = self.display_pixmap.height()
+
+                x_start_raw = self.rect_select_rect.left() - self.left_margin
+                x_end_raw = self.rect_select_rect.right() - self.left_margin
+                y_start_raw = self.rect_select_rect.top() - self.top_margin
+                y_end_raw = self.rect_select_rect.bottom() - self.top_margin
+
+                x_start = max(0, min(self.display_pixmap.width(), x_start_raw))
+                x_end = max(0, min(self.display_pixmap.width(), x_end_raw))
+                y_start = max(0, min(display_h, y_start_raw))
+                y_end = max(0, min(display_h, y_end_raw))
+
+                if (x_end - x_start) >= 2 and (y_end - y_start) >= 2:
+                    displayed_time_bins = max(1, end_idx - start_idx)
+                    sel_bin_start = int((x_start / float(self.display_pixmap.width())) * displayed_time_bins)
+                    sel_bin_end = int((x_end / float(self.display_pixmap.width())) * displayed_time_bins)
+                    sel_bin_start = max(0, min(displayed_time_bins - 1, sel_bin_start))
+                    sel_bin_end = max(sel_bin_start + 1, min(displayed_time_bins, sel_bin_end))
+
+                    time_start_idx = start_idx + sel_bin_start
+                    time_end_idx = start_idx + sel_bin_end
+
+                    # freq mapping
+                    if self.zoomed and self.zoom_freq_range:
+                        freq_start_idx = self.zoom_freq_range[0]
+                        freq_end_idx = self.zoom_freq_range[1]
+                    else:
+                        freq_start_idx = 0
+                        freq_end_idx = self.mask.shape[0]
+
+                    displayed_freq_bins = max(1, freq_end_idx - freq_start_idx)
+
+                    frac_top = float(y_start) / float(display_h)
+                    frac_bottom = float(y_end) / float(display_h)
+
+                    data_frac_start = 1.0 - frac_bottom
+                    data_frac_end = 1.0 - frac_top
+
+                    sel_freq_start = int(freq_start_idx + data_frac_start * displayed_freq_bins)
+                    sel_freq_end = int(freq_start_idx + data_frac_end * displayed_freq_bins)
+
+                    sel_freq_start = max(0, min(self.mask.shape[0] - 1, sel_freq_start))
+                    sel_freq_end = max(sel_freq_start + 1, min(self.mask.shape[0], sel_freq_end))
+
+                    # fill mask region
+                    self.mask[sel_freq_start:sel_freq_end, time_start_idx:time_end_idx] = 255
+                    self.update_display()
+                    try:
+                        self.selectionChanged.emit()
+                    except Exception:
+                        pass
+
+            finally:
+                self.rect_select_start = None
+                self.rect_select_rect = None
+                self.update()
 
     def apply_zoom(self):
         if not self.zoom_rect or self.display_pixmap is None:
@@ -289,61 +500,127 @@ class SpectrogramWidget(QWidget):
         start_idx, end_idx = self.get_viewport_indices()
         if start_idx is None:
             return
-
+        # Map zoom rectangle to spectrogram data bins instead of relying on pixel ratios
         display_height = self.display_pixmap.height()
 
+        # rectangle coordinates relative to spectrogram image
         x_start_raw = self.zoom_rect.left() - self.left_margin
         x_end_raw = self.zoom_rect.right() - self.left_margin
         y_start_raw = self.zoom_rect.top() - self.top_margin
         y_end_raw = self.zoom_rect.bottom() - self.top_margin
 
-        x_start = max(0, x_start_raw)
-        x_end = min(self.display_pixmap.width(), x_end_raw)
-        y_start = max(0, y_start_raw)
-        y_end = min(self.display_pixmap.height(), y_end_raw)
+        x_start = max(0, min(self.display_pixmap.width(), x_start_raw))
+        x_end = max(0, min(self.display_pixmap.width(), x_end_raw))
+        y_start = max(0, min(display_height, y_start_raw))
+        y_end = max(0, min(display_height, y_end_raw))
 
-        if (x_end - x_start) < 5 or (y_end - y_start) < 5:
+        if (x_end - x_start) < 4 or (y_end - y_start) < 4:
             return
 
-        if start_idx < len(self.times) and end_idx < len(self.times):
-            current_time_span = self.times[end_idx] - self.times[start_idx]
-            time_start = self.times[start_idx] + (x_start / self.display_pixmap.width()) * current_time_span
-            time_end = self.times[start_idx] + (x_end / self.display_pixmap.width()) * current_time_span
-        else:
+        # number of time bins displayed
+        displayed_time_bins = end_idx - start_idx
+        if displayed_time_bins <= 0:
             return
 
+        # compute selected time bins within displayed region
+        sel_bin_start = int((x_start / float(self.display_pixmap.width())) * displayed_time_bins)
+        sel_bin_end = int((x_end / float(self.display_pixmap.width())) * displayed_time_bins)
+        sel_bin_start = max(0, min(displayed_time_bins - 1, sel_bin_start))
+        sel_bin_end = max(sel_bin_start + 1, min(displayed_time_bins, sel_bin_end))
+
+        time_start_idx = start_idx + sel_bin_start
+        time_end_idx = start_idx + sel_bin_end
+
+        # Frequency mapping: determine currently visible freq index range
         if self.zoomed and self.zoom_freq_range:
-            current_freq_start_idx = self.zoom_freq_range[0]
-            current_freq_end_idx = self.zoom_freq_range[1]
+            freq_start_idx = self.zoom_freq_range[0]
+            freq_end_idx = self.zoom_freq_range[1]
         else:
-            current_freq_start_idx = 0
-            current_freq_end_idx = len(self.frequencies) - 1
+            freq_start_idx = 0
+            freq_end_idx = self.mask.shape[0]
 
-        current_freq_span = current_freq_end_idx - current_freq_start_idx
+        displayed_freq_bins = max(1, freq_end_idx - freq_start_idx)
 
-        fraction_y_start = y_start / display_height
-        fraction_y_end = y_end / display_height
+        # convert y (pixels) -> fraction and then to data bins (note the vertical flip)
+        frac_top = float(y_start) / float(display_height)
+        frac_bottom = float(y_end) / float(display_height)
 
-        data_fraction_start = 1 - fraction_y_end
-        data_fraction_end = 1 - fraction_y_start
+        data_frac_start = 1.0 - frac_bottom
+        data_frac_end = 1.0 - frac_top
 
-        freq_start_idx = current_freq_start_idx + int(data_fraction_start * current_freq_span)
-        freq_end_idx = current_freq_start_idx + int(data_fraction_end * current_freq_span)
+        sel_freq_start = int(freq_start_idx + data_frac_start * displayed_freq_bins)
+        sel_freq_end = int(freq_start_idx + data_frac_end * displayed_freq_bins)
 
-        freq_start_idx = max(0, min(freq_start_idx, len(self.frequencies) - 1))
-        freq_end_idx = max(freq_start_idx + 1, min(freq_end_idx, len(self.frequencies)))
+        sel_freq_start = max(0, min(self.mask.shape[0] - 1, sel_freq_start))
+        sel_freq_end = max(sel_freq_start + 1, min(self.mask.shape[0], sel_freq_end))
+
+        # set zoom ranges and make viewport match the yellow-rectangle time span
+        # convert frame indices to times for zoom_time_range
+        time_start = self.times[time_start_idx] if time_start_idx < len(self.times) else self.times[0]
+        time_end = self.times[time_end_idx - 1] if (time_end_idx - 1) < len(self.times) else self.times[-1]
+
+        # ensure a minimal duration
+        sel_duration = max(0.05, float(time_end - time_start))
+
+        # set viewport to exactly the selection span so the zoom scale follows the rectangle
+        self.viewport_duration = sel_duration
+        self.viewport_start = float(time_start)
 
         self.zoom_time_range = (time_start, time_end)
-        self.zoom_freq_range = (freq_start_idx, freq_end_idx)
+        self.zoom_freq_range = (sel_freq_start, sel_freq_end)
         self.zoomed = True
 
         self.update_display()
 
     def reset_zoom(self):
+        # Clear zoom ranges and restore a sensible default viewport
         self.zoomed = False
         self.zoom_time_range = None
         self.zoom_freq_range = None
+
+        # Restore default viewport duration to up to 60s (or the clip length)
+        try:
+            if self.times is not None and len(self.times) > 1:
+                total_dur = float(self.times[-1])
+                self.viewport_duration = min(60.0, total_dur)
+            else:
+                self.viewport_duration = 60.0
+        except Exception:
+            self.viewport_duration = 60.0
+
+        # Reset viewport start to the beginning
+        self.viewport_start = 0.0
+
         self.update_display()
+
+    def scroll_viewport(self, value):
+        """Scroll viewport using a 0-100 slider value."""
+        if self.times is None or len(self.times) == 0:
+            return
+        total_duration = float(self.times[-1])
+        frac = max(0.0, min(1.0, value / 100.0))
+
+        # If zoomed, scroll inside zoomed time range
+        if self.zoomed and self.zoom_time_range:
+            zoom_start, zoom_end = self.zoom_time_range
+            zoom_span = max(0.0, zoom_end - zoom_start)
+            if zoom_span <= self.viewport_duration:
+                self.viewport_start = float(zoom_start)
+            else:
+                max_start = float(zoom_end - self.viewport_duration)
+                self.viewport_start = float(zoom_start + frac * (max_start - zoom_start))
+        else:
+            max_start = max(0.0, total_duration - self.viewport_duration)
+            self.viewport_start = frac * max_start
+        self.update_display()
+
+    def set_playback_position(self, t):
+        """Set playback position in seconds (absolute time)."""
+        self.playback_position = t
+        self.update()
+
+    def get_mask(self):
+        return None if self.mask is None else self.mask.copy()
 
     def draw_at(self, pos):
         if self.mask is None or self.display_pixmap is None:
@@ -376,27 +653,83 @@ class SpectrogramWidget(QWidget):
         spec_x = max(0, min(spec_x, self.mask.shape[1] - 1))
         spec_y = max(0, min(spec_y, self.mask.shape[0] - 1))
 
-        radius = self.brush_size // 2
-        y_indices, x_indices = np.ogrid[-radius:radius+1, -radius:radius+1]
-        circle = x_indices**2 + y_indices**2 <= radius**2
+        # Soft circular brush with linear falloff for smoother, round strokes
+        radius = max(1, int(self.brush_size // 2))
 
         y_start = max(0, spec_y - radius)
         y_end = min(self.mask.shape[0], spec_y + radius + 1)
         x_start = max(0, spec_x - radius)
         x_end = min(self.mask.shape[1], spec_x + radius + 1)
 
-        circle_slice = circle[
-            max(0, radius - spec_y):radius + min(self.mask.shape[0] - spec_y, radius + 1),
-            max(0, radius - spec_x):radius + min(self.mask.shape[1] - spec_x, radius + 1)
-        ]
+        h = y_end - y_start
+        w = x_end - x_start
+        if h <= 0 or w <= 0:
+            return
 
-        self.mask[y_start:y_end, x_start:x_end][circle_slice] = 255
-        self.update()
+        # If we have a last_point, interpolate between points to avoid gaps
+        points = [pos]
+        if self.last_point is not None and self.last_point != pos:
+            lp = self.last_point
+            dx = pos.x() - lp.x()
+            dy = pos.y() - lp.y()
+            dist = max(1.0, (dx*dx + dy*dy) ** 0.5)
+            steps = int(max(1, dist / max(1.0, radius * 0.5)))
+            for i in range(1, steps + 1):
+                t = i / float(steps + 1)
+                ix = int(lp.x() + dx * t)
+                iy = int(lp.y() + dy * t)
+                points.append(type(pos)(ix, iy))
+
+        for p in points:
+            # recalc mapping for each interpolated point
+            adjusted_x = p.x() - self.left_margin
+            adjusted_y = p.y() - self.top_margin
+            if adjusted_x < 0 or adjusted_x >= self.display_pixmap.width():
+                continue
+            if adjusted_y < 0 or adjusted_y >= self.display_pixmap.height():
+                continue
+
+            # map to spectrogram indices
+            start_idx, end_idx = self.get_viewport_indices()
+            if start_idx is None:
+                continue
+
+            spec_x = int((adjusted_x / self.display_pixmap.width()) * (end_idx - start_idx)) + start_idx
+            display_h = self.display_pixmap.height()
+            data_fraction = 1 - (adjusted_y / display_h)
+            if self.zoomed and self.zoom_freq_range:
+                start_f, end_f = self.zoom_freq_range
+                spec_y = start_f + int(data_fraction * (end_f - start_f))
+            else:
+                spec_y = int(data_fraction * self.mask.shape[0])
+
+            spec_x = max(0, min(spec_x, self.mask.shape[1] - 1))
+            spec_y = max(0, min(spec_y, self.mask.shape[0] - 1))
+
+            y0 = max(0, spec_y - radius)
+            y1 = min(self.mask.shape[0], spec_y + radius + 1)
+            x0 = max(0, spec_x - radius)
+            x1 = min(self.mask.shape[1], spec_x + radius + 1)
+
+            yy = np.arange(y0, y1) - spec_y
+            xx = np.arange(x0, x1) - spec_x
+            dy = yy[:, None]
+            dx = xx[None, :]
+            dist = np.sqrt(dx*dx + dy*dy)
+
+            kernel = np.clip(1.0 - (dist / float(radius)), 0.0, 1.0)
+            region = self.mask[y0:y1, x0:x1].astype(np.float32)
+            new_vals = (kernel * 255.0).astype(np.float32)
+            combined = np.maximum(region, new_vals)
+            self.mask[y0:y1, x0:x1] = combined.astype(self.mask.dtype)
+
+        # update cached mask pixmap for current viewport for immediate visual response
+        self.update_display()
 
     def clear_mask(self):
         if self.mask is not None:
             self.mask.fill(0)
-            self.update()
+            self.update_display()
 
     def get_selected_pattern(self):
         if self.mask is None or self.spectrogram is None:
@@ -412,20 +745,6 @@ class SpectrogramWidget(QWidget):
         pattern = self.spectrogram[min_row:max_row+1, min_col:max_col+1]
 
         return pattern
-
-    def scroll_viewport(self, value):
-        if self.times is None:
-            return
-
-        total_duration = self.times[-1]
-        max_start = max(0, total_duration - self.viewport_duration)
-
-        self.viewport_start = (value / 100.0) * max_start
-        self.update_display()
-
-    def set_playback_position(self, position):
-        self.playback_position = position
-        self.update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
