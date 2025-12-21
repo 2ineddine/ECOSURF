@@ -1,14 +1,15 @@
 """
-File Management Panel
+File Management Panel - With Scrollbar
 Handles file loading, folder selection, and file information display
 """
 import os
 import re
 from datetime import datetime
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QPushButton, QLabel, QFileDialog, QGroupBox
+    QWidget, QVBoxLayout, QPushButton, QLabel, QFileDialog, 
+    QGroupBox, QScrollArea
 )
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt
 import soundfile as sf
 
 from ui.dialogs.period_selection import PeriodSelectionDialog
@@ -25,11 +26,22 @@ class FilePanel(QWidget):
         self.init_ui()
         
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        # Main layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Scroll area
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        # Content widget
+        content = QWidget()
+        layout = QVBoxLayout(content)
         
         # Title
         title = QLabel("File Management")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
+        title.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 5px;")
         layout.addWidget(title)
         
         # File operations group
@@ -38,47 +50,56 @@ class FilePanel(QWidget):
         
         load_btn = QPushButton("📂 Load Audio File")
         load_btn.clicked.connect(self.load_file)
-        load_btn.setMinimumHeight(40)
+        load_btn.setMinimumHeight(35)
         file_layout.addWidget(load_btn)
         
         load_folder_btn = QPushButton("📁 Load Folder")
         load_folder_btn.clicked.connect(self.load_folder)
-        load_folder_btn.setMinimumHeight(40)
+        load_folder_btn.setMinimumHeight(35)
         file_layout.addWidget(load_folder_btn)
         
-        reset_btn = QPushButton("🔄 Reset Application")
+        reset_btn = QPushButton("🔄 Reset")
         reset_btn.clicked.connect(self.reset_application)
-        reset_btn.setMinimumHeight(40)
+        reset_btn.setMinimumHeight(35)
         file_layout.addWidget(reset_btn)
         
         file_group.setLayout(file_layout)
         layout.addWidget(file_group)
         
         # File info group
-        info_group = QGroupBox("Current File Information")
+        info_group = QGroupBox("Current File")
         info_layout = QVBoxLayout()
         
-        self.file_label = QLabel("No file loaded\n\nClick 'Load Audio File' to start")
+        self.file_label = QLabel("No file loaded")
         self.file_label.setWordWrap(True)
-        self.file_label.setStyleSheet("padding: 10px; background-color: #f9f9f9; border-radius: 5px;")
+        self.file_label.setStyleSheet(
+            "padding: 8px; background-color: #f9f9f9; "
+            "border-radius: 5px; font-size: 11px;"
+        )
         info_layout.addWidget(self.file_label)
         
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
         
         # Folder info group
-        folder_group = QGroupBox("Folder Information")
+        folder_group = QGroupBox("Folder")
         folder_layout = QVBoxLayout()
         
         self.folder_label = QLabel("No folder loaded")
         self.folder_label.setWordWrap(True)
-        self.folder_label.setStyleSheet("padding: 10px; background-color: #f9f9f9; border-radius: 5px;")
+        self.folder_label.setStyleSheet(
+            "padding: 8px; background-color: #f9f9f9; "
+            "border-radius: 5px; font-size: 11px;"
+        )
         folder_layout.addWidget(self.folder_label)
         
         folder_group.setLayout(folder_layout)
         layout.addWidget(folder_group)
         
         layout.addStretch()
+        
+        scroll.setWidget(content)
+        main_layout.addWidget(scroll)
         
     def parse_filename(self, filename):
         """Parse device ID and timestamp from filename"""
@@ -122,7 +143,7 @@ class FilePanel(QWidget):
                         f"<b>Time:</b> {metadata['time']}<br>"
                         f"<b>Duration:</b> {duration:.2f}s<br>"
                         f"<b>Range:</b> {range_text}<br>"
-                        f"<b>Sample Rate:</b> {info.samplerate} Hz<br>"
+                        f"<b>SR:</b> {info.samplerate} Hz<br>"
                         f"<b>Channels:</b> {info.channels}"
                     )
                     
@@ -133,7 +154,7 @@ class FilePanel(QWidget):
                 
     def load_folder(self):
         """Load all audio files from a folder"""
-        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder with Audio Files")
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder")
         
         if folder_path:
             self.file_list = [
@@ -144,8 +165,8 @@ class FilePanel(QWidget):
             
             self.folder_label.setText(
                 f"<b>Folder:</b> {os.path.basename(folder_path)}<br>"
-                f"<b>Files loaded:</b> {len(self.file_list)}<br>"
-                f"<b>Path:</b> {folder_path}"
+                f"<b>Files:</b> {len(self.file_list)}<br>"
+                f"<b>Path:</b> ...{folder_path[-40:]}"
             )
             
             # Emit signal
@@ -155,7 +176,7 @@ class FilePanel(QWidget):
         """Reset all file information"""
         self.current_file = None
         self.file_list = []
-        self.file_label.setText("No file loaded\n\nClick 'Load Audio File' to start")
+        self.file_label.setText("No file loaded")
         self.folder_label.setText("No folder loaded")
         
     def update_file_info(self, additional_info):

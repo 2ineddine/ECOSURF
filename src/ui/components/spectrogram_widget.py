@@ -21,6 +21,7 @@ class SpectrogramWidget(QWidget):
         self.mask = None
         self.last_point = None
         self.brush_enabled = False
+        self.rect_selection_mode = False  # ADD THIS LINE
 
         # Rectangle selection for brush (right-button drag)
         self.rect_select_start = None
@@ -392,102 +393,178 @@ class SpectrogramWidget(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            if self.zoom_enabled:
+            if self.rect_selection_mode:
+                # Rectangle selection mode - start rectangle
+                self.zoom_start = event.pos()
+                self.zoom_rect = QRect(self.zoom_start, self.zoom_start)
+            elif self.zoom_enabled:
+                # Zoom mode - start rectangle
                 self.zoom_start = event.pos()
                 self.zoom_rect = QRect(self.zoom_start, self.zoom_start)
             elif self.brush_enabled:
-                # left-button draws with brush
+                # Brush mode - left-button draws with brush
                 self.drawing = True
                 self.last_point = event.pos()
                 self.draw_at(event.pos())
         elif event.button() == Qt.MouseButton.RightButton and self.brush_enabled:
-            # start rectangle selection with right button while brush enabled
+            # Right-button rectangle selection while brush enabled
             self.rect_select_start = event.pos()
             self.rect_select_rect = QRect(self.rect_select_start, self.rect_select_start)
             self.update()
 
     def mouseMoveEvent(self, event):
-        if self.zoom_enabled and self.zoom_start:
+        if self.rect_selection_mode and self.zoom_start:
+            # Rectangle selection mode - update rectangle
+            self.zoom_rect = QRect(self.zoom_start, event.pos()).normalized()
+            self.update()
+        elif self.zoom_enabled and self.zoom_start:
+            # Zoom mode - update rectangle
             self.zoom_rect = QRect(self.zoom_start, event.pos()).normalized()
             self.update()
         elif self.brush_enabled and self.drawing:
+            # Brush mode - draw while moving
             self.draw_at(event.pos())
             self.last_point = event.pos()
         elif self.rect_select_start is not None:
+            # Right-button rectangle while brush enabled
             self.rect_select_rect = QRect(self.rect_select_start, event.pos()).normalized()
             self.update()
 
+    # File: ui/components/spectrogram_widget.py
+# Replace your mouseReleaseEvent method with this:
+
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            if self.zoom_enabled and self.zoom_rect:
+            # Rectangle selection mode (left-click) - fill the selected area
+            if self.rect_selection_mode and self.zoom_start and self.zoom_rect:
+                try:
+                    start_idx, end_idx = self.get_viewport_indices()
+                    if start_idx is None:
+                        self.zoom_start = None
+                        self.zoom_rect = None
+                        return
+                    
+                    display_h = self.display_pixmap.height()
+                    x_start_raw = self.zoom_rect.left() - self.left_margin
+                    x_end_raw = self.zoom_rect.right() - self.left_margin
+                    y_start_raw = self.zoom_rect.top() - self.top_margin
+                    y_end_raw = self.zoom_rect.bottom() - self.top_margin
+                    
+                    x_start = max(0, min(self.display_pixmap.width(), x_start_raw))
+                    x_end = max(0, min(self.display_pixmap.width(), x_end_raw))
+                    y_start = max(0, min(display_h, y_start_raw))
+                    y_end = max(0, min(display_h, y_end_raw))
+                    
+                    if (x_end - x_start) >= 2 and (y_end - y_start) >= 2:
+                        displayed_time_bins = max(1, end_idx - start_idx)
+                        sel_bin_start = int((x_start / float(self.display_pixmap.width())) * displayed_time_bins)
+                        sel_bin_end = int((x_end / float(self.display_pixmap.width())) * displayed_time_bins)
+                        sel_bin_start = max(0, min(displayed_time_bins - 1, sel_bin_start))
+                        sel_bin_end = max(sel_bin_start + 1, min(displayed_time_bins, sel_bin_end))
+                        
+                        time_start_idx = start_idx + sel_bin_start
+                        time_end_idx = start_idx + sel_bin_end
+                        
+                        # Freq mapping
+                        if self.zoomed and self.zoom_freq_range:
+                            freq_start_idx = self.zoom_freq_range[0]
+                            freq_end_idx = self.zoom_freq_range[1]
+                        else:
+                            freq_start_idx = 0
+                            freq_end_idx = self.mask.shape[0]
+                        
+                        displayed_freq_bins = max(1, freq_end_idx - freq_start_idx)
+                        frac_top = float(y_start) / float(display_h)
+                        frac_bottom = float(y_end) / float(display_h)
+                        data_frac_start = 1.0 - frac_bottom
+                        data_frac_end = 1.0 - frac_top
+                        
+                        sel_freq_start = int(freq_start_idx + data_frac_start * displayed_freq_bins)
+                        sel_freq_end = int(freq_start_idx + data_frac_end * displayed_freq_bins)
+                        sel_freq_start = max(0, min(self.mask.shape[0] - 1, sel_freq_start))
+                        sel_freq_end = max(sel_freq_start + 1, min(self.mask.shape[0], sel_freq_end))
+                        
+                        # Fill mask region
+                        self.mask[sel_freq_start:sel_freq_end, time_start_idx:time_end_idx] = 255
+                        self.update_display()
+                        
+                        try:
+                            self.selectionChanged.emit()
+                        except Exception:
+                            pass
+                finally:
+                    self.zoom_start = None
+                    self.zoom_rect = None
+                    self.update()
+                    
+            # Zoom mode - apply zoom
+            elif self.zoom_enabled and self.zoom_rect:
                 self.apply_zoom()
                 self.zoom_start = None
                 self.zoom_rect = None
+                
+            # Brush mode - stop drawing
             elif self.brush_enabled:
                 self.drawing = False
                 self.last_point = None
+                
         elif event.button() == Qt.MouseButton.RightButton and self.rect_select_rect is not None:
-            # finalize rectangle selection -> fill mask in that rectangle region
+            # Right-button rectangle selection (when brush enabled) - fill the selected area
             try:
-                # map rectangle to spectrogram bins similar to apply_zoom
                 start_idx, end_idx = self.get_viewport_indices()
                 if start_idx is None:
                     self.rect_select_start = None
                     self.rect_select_rect = None
                     return
-
+                    
                 display_h = self.display_pixmap.height()
-
                 x_start_raw = self.rect_select_rect.left() - self.left_margin
                 x_end_raw = self.rect_select_rect.right() - self.left_margin
                 y_start_raw = self.rect_select_rect.top() - self.top_margin
                 y_end_raw = self.rect_select_rect.bottom() - self.top_margin
-
+                
                 x_start = max(0, min(self.display_pixmap.width(), x_start_raw))
                 x_end = max(0, min(self.display_pixmap.width(), x_end_raw))
                 y_start = max(0, min(display_h, y_start_raw))
                 y_end = max(0, min(display_h, y_end_raw))
-
+                
                 if (x_end - x_start) >= 2 and (y_end - y_start) >= 2:
                     displayed_time_bins = max(1, end_idx - start_idx)
                     sel_bin_start = int((x_start / float(self.display_pixmap.width())) * displayed_time_bins)
                     sel_bin_end = int((x_end / float(self.display_pixmap.width())) * displayed_time_bins)
                     sel_bin_start = max(0, min(displayed_time_bins - 1, sel_bin_start))
                     sel_bin_end = max(sel_bin_start + 1, min(displayed_time_bins, sel_bin_end))
-
+                    
                     time_start_idx = start_idx + sel_bin_start
                     time_end_idx = start_idx + sel_bin_end
-
-                    # freq mapping
+                    
+                    # Freq mapping
                     if self.zoomed and self.zoom_freq_range:
                         freq_start_idx = self.zoom_freq_range[0]
                         freq_end_idx = self.zoom_freq_range[1]
                     else:
                         freq_start_idx = 0
                         freq_end_idx = self.mask.shape[0]
-
+                    
                     displayed_freq_bins = max(1, freq_end_idx - freq_start_idx)
-
                     frac_top = float(y_start) / float(display_h)
                     frac_bottom = float(y_end) / float(display_h)
-
                     data_frac_start = 1.0 - frac_bottom
                     data_frac_end = 1.0 - frac_top
-
+                    
                     sel_freq_start = int(freq_start_idx + data_frac_start * displayed_freq_bins)
                     sel_freq_end = int(freq_start_idx + data_frac_end * displayed_freq_bins)
-
                     sel_freq_start = max(0, min(self.mask.shape[0] - 1, sel_freq_start))
                     sel_freq_end = max(sel_freq_start + 1, min(self.mask.shape[0], sel_freq_end))
-
-                    # fill mask region
+                    
+                    # Fill mask region
                     self.mask[sel_freq_start:sel_freq_end, time_start_idx:time_end_idx] = 255
                     self.update_display()
+                    
                     try:
                         self.selectionChanged.emit()
                     except Exception:
                         pass
-
             finally:
                 self.rect_select_start = None
                 self.rect_select_rect = None

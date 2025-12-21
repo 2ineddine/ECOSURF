@@ -2,6 +2,7 @@
 Main Window - Professional Modular Architecture
 Features are selected from left sidebar, panels displayed on right
 Viewport scrollbar placed under spectrogram
+WITH TOGGLE BUTTONS FOR BOTH PANELS
 """
 import os
 import threading
@@ -9,9 +10,9 @@ from datetime import datetime
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QListWidget, QStackedWidget, QSplitter, QScrollBar
+    QListWidget, QStackedWidget, QSplitter, QScrollBar, QPushButton
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont
 import librosa
 
@@ -44,6 +45,10 @@ class MainWindow(QMainWindow):
         self.playback_timer.timeout.connect(self.update_playback_position)
         self.playback_start_time = 0
         
+        # Panel visibility state
+        self.left_panel_visible = True
+        self.bottom_panel_visible = True
+        
         self.init_ui()
         self.connect_signals()
         
@@ -52,13 +57,19 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
-        # Left sidebar - Feature selector
+        # Left sidebar container with toggle button
+        left_container = QWidget()
+        left_layout = QHBoxLayout(left_container)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
+        
+        # Feature selector
         self.feature_list = QListWidget()
         self.feature_list.setMaximumWidth(220)
-        self.feature_list.setMinimumWidth(200)
+        self.feature_list.setMinimumWidth(220)
         
         # Add features
         features = [
@@ -78,12 +89,12 @@ class MainWindow(QMainWindow):
             QListWidget {
                 background-color: #f5f5f5;
                 border: 1px solid #ddd;
-                border-radius: 5px;
+                border-radius: 0px;
                 padding: 5px;
-                font-size: 13px;
+                font-size: 12px;
             }
             QListWidget::item {
-                padding: 12px;
+                padding: 10px;
                 border-radius: 3px;
                 margin: 2px;
             }
@@ -98,10 +109,31 @@ class MainWindow(QMainWindow):
         
         self.feature_list.currentRowChanged.connect(self.on_feature_changed)
         
+        # Left toggle button
+        self.left_toggle_btn = QPushButton("◀")
+        self.left_toggle_btn.setMaximumWidth(20)
+        self.left_toggle_btn.setMinimumHeight(100)
+        self.left_toggle_btn.clicked.connect(self.toggle_left_panel)
+        self.left_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                border: none;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        
+        left_layout.addWidget(self.feature_list)
+        left_layout.addWidget(self.left_toggle_btn)
+        
         # Right side - Stacked panels and spectrogram
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setContentsMargins(5, 5, 5, 5)
         
         # Top: Spectrogram display with viewport scrollbar underneath
         spectrogram_container = QWidget()
@@ -123,7 +155,29 @@ class MainWindow(QMainWindow):
         
         right_layout.addWidget(spectrogram_container, stretch=3)
         
-        # Bottom: Feature panels
+        # Bottom: Feature panels with toggle button
+        bottom_container = QWidget()
+        bottom_layout = QVBoxLayout(bottom_container)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.setSpacing(0)
+        
+        # Bottom toggle button
+        self.bottom_toggle_btn = QPushButton("▼ Hide Controls")
+        self.bottom_toggle_btn.setMaximumHeight(25)
+        self.bottom_toggle_btn.clicked.connect(self.toggle_bottom_panel)
+        self.bottom_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                font-weight: bold;
+                border: none;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """)
+        
         self.panel_stack = QStackedWidget()
         
         # Create all panels
@@ -142,18 +196,67 @@ class MainWindow(QMainWindow):
         self.panel_stack.addWidget(self.pattern_panel)
         self.panel_stack.addWidget(self.search_panel)
         
-        right_layout.addWidget(self.panel_stack, stretch=2)
+        bottom_layout.addWidget(self.bottom_toggle_btn)
+        bottom_layout.addWidget(self.panel_stack)
+        
+        right_layout.addWidget(bottom_container, stretch=2)
         
         # Main splitter
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.feature_list)
-        splitter.addWidget(right_widget)
-        splitter.setSizes([220, 1380])
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter.addWidget(left_container)
+        self.main_splitter.addWidget(right_widget)
+        self.main_splitter.setSizes([220, 1380])
         
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(self.main_splitter)
+        
+        # Animations for panels
+        self.left_animation = QPropertyAnimation(left_container, b"maximumWidth")
+        self.left_animation.setDuration(300)
+        self.left_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        
+        self.bottom_animation = QPropertyAnimation(self.panel_stack, b"maximumHeight")
+        self.bottom_animation.setDuration(300)
+        self.bottom_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         
         # Select first feature by default
         self.feature_list.setCurrentRow(0)
+        
+    def toggle_left_panel(self):
+        """Toggle left sidebar visibility"""
+        if self.left_panel_visible:
+            # Hide
+            self.left_animation.setStartValue(220)
+            self.left_animation.setEndValue(20)
+            self.left_toggle_btn.setText("▶")
+            self.feature_list.hide()
+            self.left_panel_visible = False
+        else:
+            # Show
+            self.left_animation.setStartValue(20)
+            self.left_animation.setEndValue(220)
+            self.left_toggle_btn.setText("◀")
+            self.feature_list.show()
+            self.left_panel_visible = True
+            
+        self.left_animation.start()
+        
+    def toggle_bottom_panel(self):
+        """Toggle bottom panel visibility"""
+        if self.bottom_panel_visible:
+            # Hide
+            current_height = self.panel_stack.height()
+            self.bottom_animation.setStartValue(current_height)
+            self.bottom_animation.setEndValue(0)
+            self.bottom_toggle_btn.setText("▲ Show Controls")
+            self.bottom_panel_visible = False
+        else:
+            # Show
+            self.bottom_animation.setStartValue(0)
+            self.bottom_animation.setEndValue(400)
+            self.bottom_toggle_btn.setText("▼ Hide Controls")
+            self.bottom_panel_visible = True
+            
+        self.bottom_animation.start()
         
     def connect_signals(self):
         """Connect all inter-panel signals"""
@@ -177,6 +280,8 @@ class MainWindow(QMainWindow):
         # Pattern panel signals
         self.pattern_panel.brush_toggled.connect(self.on_brush_toggled)
         self.pattern_panel.brush_size_changed.connect(self.on_brush_size_changed)
+        self.pattern_panel.rect_mode_toggled.connect(self.on_rect_mode_toggled)
+        self.pattern_panel.selection_cleared.connect(self.spectrogram_widget.clear_mask)
         self.pattern_panel.selection_cleared.connect(self.spectrogram_widget.clear_mask)
         self.pattern_panel.extract_requested.connect(self.extract_selection)
         self.pattern_panel.play_selection_requested.connect(self.play_selection)
@@ -263,6 +368,16 @@ class MainWindow(QMainWindow):
         self.spectrogram_widget.brush_enabled = enabled
         if enabled:
             self.view_panel.disable_zoom()
+    def on_rect_mode_toggled(self, enabled):
+        """Handle rectangle selection mode toggle"""
+        if enabled:
+            # Enable rectangle selection mode on spectrogram widget
+            self.spectrogram_widget.rect_selection_mode = True
+            self.spectrogram_widget.brush_enabled = False
+            # Disable zoom when rect selection is on
+            self.view_panel.disable_zoom()
+        else:
+            self.spectrogram_widget.rect_selection_mode = False
             
     def on_brush_size_changed(self, size):
         """Handle brush size change"""
@@ -473,9 +588,6 @@ class MainWindow(QMainWindow):
         """Open a file from search results"""
         self.current_file = file_path
         self.file_panel.file_label.setText(f"Opened: {os.path.basename(file_path)}")
-        # Trigger spectrogram computation
-        # Will need time range - use full file for now
-        # Better: parse from search result or use default
         
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts"""
@@ -510,6 +622,16 @@ class MainWindow(QMainWindow):
             return
         if key == Qt.Key.Key_Equal:
             self.pattern_panel.change_brush_size(+2)
+            return
+            
+        # F1: toggle left panel
+        if key == Qt.Key.Key_F1:
+            self.toggle_left_panel()
+            return
+            
+        # F2: toggle bottom panel
+        if key == Qt.Key.Key_F2:
+            self.toggle_bottom_panel()
             return
             
         super().keyPressEvent(event)
