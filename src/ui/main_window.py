@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont
 import librosa
-
+from PyQt6.QtCore import pyqtSignal  # <-- Add this if not already imported
 from ui.panels.panels_file import FilePanel
 from ui.panels.spectrogram_panel import SpectrogramPanel
 from ui.panels.view_panel import ViewPanel
@@ -257,11 +257,20 @@ class MainWindow(QMainWindow):
             self.bottom_panel_visible = True
             
         self.bottom_animation.start()
+    def on_period_dict_loaded(self, period_dict):
+        """Handle period dictionary loaded from file panel"""
+        # Pass to search panel for accelerated searching
+        if hasattr(self, 'search_panel'):
+            self.search_panel.set_period_dict(period_dict)
         
+        # Optional: Update status bar
+        self.statusBar().showMessage(f"Loaded period dictionary: {len(period_dict)} entries", 3000)
     def connect_signals(self):
         """Connect all inter-panel signals"""
-        # File panel signals
         self.file_panel.file_loaded.connect(self.on_file_loaded)
+        # File panel signals
+        self.file_panel.search_scope_changed.connect(self.on_search_scope_changed)
+        self.file_panel.period_dict_loaded.connect(self.on_period_dict_loaded)
         self.file_panel.folder_loaded.connect(self.on_folder_loaded)
         
         # Spectrogram panel signals
@@ -368,6 +377,23 @@ class MainWindow(QMainWindow):
         self.spectrogram_widget.brush_enabled = enabled
         if enabled:
             self.view_panel.disable_zoom()
+    
+    def on_search_scope_changed(self, scope_type, file_list):
+        """Handle search scope change from file panel"""
+        # Update search panel
+        if hasattr(self, 'search_panel') and hasattr(self.search_panel, 'set_search_scope'):
+            self.search_panel.set_search_scope(scope_type, file_list)
+        
+        # Show in status bar
+        scope_names = {
+            "database": "Entire database",
+            "current": "Current file only",
+            "period": "Selected date range"
+        }
+        self.statusBar().showMessage(
+            f"Search scope: {scope_names.get(scope_type, 'Unknown')} ({len(file_list)} files)",
+            3000
+        )
     def on_rect_mode_toggled(self, enabled):
         """Handle rectangle selection mode toggle"""
         if enabled:

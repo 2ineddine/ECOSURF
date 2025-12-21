@@ -20,6 +20,7 @@ class SearchPanel(QWidget):
         self.search_thread = None
         self.file_list = []
         self.audio_data = None
+        self.period_dict = {}  # <-- ADD THIS LINE
         self.init_ui()
         
     def init_ui(self):
@@ -153,6 +154,16 @@ class SearchPanel(QWidget):
         """Set the audio data (needed for pattern extraction)"""
         self.audio_data = audio_data
         self.update_search_button_state()
+
+    def set_period_dict(self, period_dict):
+        """Set period dictionary used for accelerated searching."""
+        try:
+            self.period_dict = period_dict or {}
+            self.status_label.setText(f"Loaded period dict: {len(self.period_dict)} entries")
+            self.update_search_button_state()
+        except Exception:
+            # Keep minimal behavior on failure
+            self.period_dict = {}
         
     def update_search_button_state(self):
         """Enable search button if we have files and pattern"""

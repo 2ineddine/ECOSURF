@@ -51,11 +51,11 @@ class PatternPanel(QWidget):
         brush_layout = QVBoxLayout()
         brush_layout.setSpacing(4)
         
-        self.brush_checkbox = QCheckBox("🖌 Enable")
+        self.brush_checkbox = QCheckBox("brush")
         self.brush_checkbox.setStyleSheet("font-size: 11px;")
         self.brush_checkbox.stateChanged.connect(self.on_brush_toggled)
         brush_layout.addWidget(self.brush_checkbox)
-        self.rect_checkbox = QCheckBox("▭ Rectangle Select")
+        self.rect_checkbox = QCheckBox("Rectangle Select")
         self.rect_checkbox.setStyleSheet("font-size: 11px;")
         self.rect_checkbox.stateChanged.connect(self.on_rect_toggled)
         brush_layout.addWidget(self.rect_checkbox)
