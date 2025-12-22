@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QCursor
 import soundfile as sf
+from PyQt6.QtWidgets import QFrame
 
 
 class PatternPanel(QWidget):
@@ -20,6 +21,7 @@ class PatternPanel(QWidget):
     play_selection_requested = pyqtSignal()
     cursor_changed = pyqtSignal(object)  # QCursor
     rect_mode_toggled = pyqtSignal(bool)
+    
     def __init__(self):
         super().__init__()
         self.selection_audio = None
@@ -35,40 +37,103 @@ class PatternPanel(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         
         # Content widget
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setSpacing(8)
+        layout.setSpacing(12)
         
-        # Title
+        # Ubuntu-style title
         title = QLabel("Pattern Selection")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 3px;")
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                font-weight: bold;
+                color: #E95420;
+                padding: 8px 0px;
+                border-bottom: 2px solid #DEDEDE;
+                margin-bottom: 5px;
+            }
+        """)
         layout.addWidget(title)
         
-        # Brush controls group - COMPACT
-        brush_group = QGroupBox("Brush")
+        # Brush controls group
+        brush_group = QGroupBox("Selection Tools")
+        brush_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
         brush_layout = QVBoxLayout()
-        brush_layout.setSpacing(4)
+        brush_layout.setContentsMargins(12, 15, 12, 12)
+        brush_layout.setSpacing(10)
         
-        self.brush_checkbox = QCheckBox("brush")
-        self.brush_checkbox.setStyleSheet("font-size: 11px;")
+        # Ubuntu-style checkboxes
+        self.brush_checkbox = QCheckBox("Freehand Brush")
+        self.brush_checkbox.setStyleSheet("""
+            QCheckBox {
+                font-size: 13px;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #888888;
+                border-radius: 3px;
+                background-color: white;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #E95420;
+                border: 2px solid #E95420;
+                image: url(none);
+            }
+            QCheckBox::indicator:hover {
+                border: 2px solid #555555;
+            }
+        """)
         self.brush_checkbox.stateChanged.connect(self.on_brush_toggled)
         brush_layout.addWidget(self.brush_checkbox)
+        
         self.rect_checkbox = QCheckBox("Rectangle Select")
-        self.rect_checkbox.setStyleSheet("font-size: 11px;")
+        self.rect_checkbox.setStyleSheet("""
+            QCheckBox {
+                font-size: 13px;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #888888;
+                border-radius: 3px;
+                background-color: white;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #E95420;
+                border: 2px solid #E95420;
+                image: url(none);
+            }
+            QCheckBox::indicator:hover {
+                border: 2px solid #555555;
+            }
+        """)
         self.rect_checkbox.stateChanged.connect(self.on_rect_toggled)
         brush_layout.addWidget(self.rect_checkbox)
         
-        # Compact brush size control
-        size_container = QWidget()
-        size_layout = QVBoxLayout(size_container)
-        size_layout.setSpacing(2)
-        size_layout.setContentsMargins(0, 0, 0, 0)
-        
-        size_label = QLabel("Size:")
-        size_label.setStyleSheet("font-size: 10px; font-weight: bold;")
-        size_layout.addWidget(size_label)
+        # Brush size control
+        size_label = QLabel("Brush Size:")
+        size_label.setStyleSheet("font-size: 12px; color: #333333; font-weight: bold; margin-top: 8px;")
+        brush_layout.addWidget(size_label)
         
         self.brush_slider = QSlider(Qt.Orientation.Horizontal)
         self.brush_slider.setMinimum(5)
@@ -76,78 +141,222 @@ class PatternPanel(QWidget):
         self.brush_slider.setValue(20)
         self.brush_slider.setMaximumHeight(20)
         self.brush_slider.valueChanged.connect(self.on_brush_size_changed)
-        size_layout.addWidget(self.brush_slider)
+        self.brush_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                border: 1px solid #CCCCCC;
+                height: 6px;
+                background: white;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #77216F;
+                border: 2px solid #77216F;
+                width: 18px;
+                margin: -7px 0;
+                border-radius: 9px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #5E2750;
+                border: 2px solid #5E2750;
+            }
+            QSlider::add-page:horizontal {
+                background: #E0E0E0;
+                border-radius: 3px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #77216F;
+                border-radius: 3px;
+            }
+        """)
+        brush_layout.addWidget(self.brush_slider)
         
         self.brush_size_label = QLabel("20 px")
-        self.brush_size_label.setStyleSheet("color: #666; font-size: 9px;")
-        size_layout.addWidget(self.brush_size_label)
+        self.brush_size_label.setStyleSheet("""
+            QLabel {
+                color: #5E5E5E;
+                font-size: 11px;
+                padding-left: 5px;
+            }
+        """)
+        brush_layout.addWidget(self.brush_size_label)
         
-        brush_layout.addWidget(size_container)
-        
-        clear_btn = QPushButton("🗑 Clear")
-        clear_btn.setMaximumHeight(26)
-        clear_btn.setStyleSheet("font-size: 10px;")
+        # Clear button
+        clear_btn = QPushButton("Clear Selection")
+        clear_btn.setMinimumHeight(32)
         clear_btn.clicked.connect(self.on_clear_selection)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F2F2F2;
+                color: #333333;
+                font-size: 12px;
+                border: 1px solid #CCCCCC;
+                border-radius: 4px;
+                padding: 6px;
+                margin-top: 8px;
+            }
+            QPushButton:hover {
+                background-color: #E5E5E5;
+                border: 1px solid #888888;
+            }
+        """)
         brush_layout.addWidget(clear_btn)
         
         brush_group.setLayout(brush_layout)
         layout.addWidget(brush_group)
         
-        # Selection operations group - EXPANDED
+        # Selection operations group
         operations_group = QGroupBox("Selection Operations")
+        operations_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
         operations_layout = QVBoxLayout()
-        operations_layout.setSpacing(6)
+        operations_layout.setContentsMargins(12, 15, 12, 12)
+        operations_layout.setSpacing(10)
         
-        extract_btn = QPushButton("✂ Extract Selection")
-        extract_btn.setMinimumHeight(38)
+        # Extract button
+        extract_btn = QPushButton("Extract Selection")
+        extract_btn.setMinimumHeight(36)
         extract_btn.clicked.connect(self.on_extract_selection)
         extract_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2196F3;
+                background-color: #E95420;
                 color: white;
                 font-weight: bold;
-                font-size: 12px;
+                font-size: 13px;
+                border: none;
+                border-radius: 4px;
+                padding: 8px;
             }
             QPushButton:hover {
-                background-color: #1976D2;
+                background-color: #D34615;
             }
         """)
         operations_layout.addWidget(extract_btn)
         
-        self.play_selection_btn = QPushButton("▶ Play Selection")
+        # Play selection button
+        self.play_selection_btn = QPushButton("Play Selection")
         self.play_selection_btn.setEnabled(False)
-        self.play_selection_btn.setMinimumHeight(35)
-        self.play_selection_btn.setStyleSheet("font-size: 11px;")
+        self.play_selection_btn.setMinimumHeight(32)
         self.play_selection_btn.clicked.connect(self.on_play_selection)
+        self.play_selection_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F2F2F2;
+                color: #333333;
+                font-size: 12px;
+                border: 1px solid #CCCCCC;
+                border-radius: 4px;
+                padding: 6px;
+            }
+            QPushButton:hover:enabled {
+                background-color: #E5E5E5;
+                border: 1px solid #888888;
+            }
+            QPushButton:disabled {
+                background-color: #FAFAFA;
+                color: #BBBBBB;
+                border: 1px solid #E0E0E0;
+            }
+        """)
         operations_layout.addWidget(self.play_selection_btn)
         
-        self.save_btn = QPushButton("💾 Save Selection")
+        # Save selection button
+        self.save_btn = QPushButton("Save Selection as WAV")
         self.save_btn.setEnabled(False)
-        self.save_btn.setMinimumHeight(35)
-        self.save_btn.setStyleSheet("font-size: 11px;")
+        self.save_btn.setMinimumHeight(32)
         self.save_btn.clicked.connect(self.on_save_selection)
+        self.save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #77216F;
+                color: white;
+                font-size: 12px;
+                border: none;
+                border-radius: 4px;
+                padding: 6px;
+            }
+            QPushButton:hover:enabled {
+                background-color: #5E2750;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+                color: #888888;
+            }
+        """)
         operations_layout.addWidget(self.save_btn)
         
-        # Status with more height
+        # Status display
         self.selection_status = QLabel("No selection extracted")
-        self.selection_status.setStyleSheet(
-            "padding: 10px; background-color: #f9f9f9; "
-            "border-radius: 4px; font-size: 11px; min-height: 50px;"
-        )
         self.selection_status.setWordWrap(True)
+        self.selection_status.setStyleSheet("""
+            QLabel {
+                padding: 12px;
+                background-color: white;
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #5E5E5E;
+                line-height: 1.4;
+                min-height: 60px;
+            }
+        """)
         operations_layout.addWidget(self.selection_status)
         
         operations_group.setLayout(operations_layout)
         layout.addWidget(operations_group)
         
-        # Compact tips
-        tips_label = QLabel("💡 <b>Keys:</b> Shift+Space (play) | -/= (brush size)")
-        tips_label.setWordWrap(True)
-        tips_label.setStyleSheet(
-            "padding: 5px; background-color: #e3f2fd; "
-            "border-radius: 3px; font-size: 9px;"
+        # Tips section
+        tips_group = QGroupBox("Keyboard Shortcuts")
+        tips_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
+        tips_layout = QVBoxLayout()
+        tips_layout.setContentsMargins(12, 15, 12, 12)
+        
+        tips_label = QLabel(
+            "• <b>- / =</b> - Adjust brush size<br>"
+            "• <b>Shift+Space</b> - Play/Pause selection<br>"
+            "• <b>Space</b> - Play/Pause main audio<br>"
+            "• <b>R</b> - Reset zoom"
         )
-        layout.addWidget(tips_label)
+        tips_label.setWordWrap(True)
+        tips_label.setStyleSheet("""
+            QLabel {
+                padding: 10px;
+                background-color: white;
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #5E5E5E;
+                line-height: 1.4;
+            }
+        """)
+        tips_layout.addWidget(tips_label)
+        
+        tips_group.setLayout(tips_layout)
+        layout.addWidget(tips_group)
         
         layout.addStretch()
         
@@ -184,6 +393,7 @@ class PatternPanel(QWidget):
             except:
                 pass
             self.cursor_changed.emit(QCursor(Qt.CursorShape.ArrowCursor))      
+    
     def on_brush_size_changed(self, value):
         """Handle brush size slider change"""
         self.brush_size_label.setText(f"{value} px")
@@ -205,7 +415,7 @@ class PatternPanel(QWidget):
     def on_save_selection(self):
         """Handle save selection button"""
         if self.selection_audio is None:
-            self.selection_status.setText("⚠️ No selection to save")
+            self.selection_status.setText("No selection to save")
             return
             
         default_name = "selection.wav"
@@ -232,11 +442,10 @@ class PatternPanel(QWidget):
                 f.write(str(self.selection_meta))
                 
             self.selection_status.setText(
-                f"✅ <b>Saved successfully</b><br>"
-                f"File: {os.path.basename(filename)}"
+                f"Saved successfully\nFile: {os.path.basename(filename)}"
             )
         except Exception as e:
-            self.selection_status.setText(f"❌ Error: {str(e)[:40]}")
+            self.selection_status.setText(f"Error: {str(e)[:40]}")
             
     def set_selection_audio(self, audio, meta):
         """Set the extracted selection audio"""
@@ -247,9 +456,9 @@ class PatternPanel(QWidget):
         
         duration = len(audio) / meta.get('sample_rate', 22050)
         self.selection_status.setText(
-            f"✅ <b>Selection extracted successfully!</b><br>"
-            f"<b>Duration:</b> {duration:.2f} seconds<br>"
-            f"<b>Samples:</b> {len(audio):,}<br>"
+            f"✅ Selection extracted successfully!\n"
+            f"<b>Duration:</b> {duration:.2f} seconds\n"
+            f"<b>Samples:</b> {len(audio):,}\n"
             f"Ready to play or save"
         )
         

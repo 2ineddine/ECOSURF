@@ -31,7 +31,7 @@ class MultiFileAudioProcessor(QThread):
             for i, fp in enumerate(self.file_list):
                 print(f"  [{i}] {fp}")
                 if not fp or not fp.startswith('s3://'):
-                    print(f"  ⚠️ WARNING: Invalid path at index {i}: '{fp}'")
+                    print(f"  WARNING: Invalid path at index {i}: '{fp}'")
         try:
             # --- PREPARE S3 CLIENT (ONCE) ---
             import json, os, boto3, io

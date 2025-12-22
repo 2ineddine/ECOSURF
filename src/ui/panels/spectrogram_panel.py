@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QProgressBar, QScrollArea
 )
 from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtWidgets import QFrame
 
 from ui.workers.audio_processor_w import AudioProcessor
 import os
@@ -25,59 +26,175 @@ class SpectrogramPanel(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         
         content = QWidget()
         layout = QVBoxLayout(content)
+        layout.setSpacing(12)
         
-        title = QLabel("Spectrogram Config")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 5px;")
+        # Ubuntu-style title
+        title = QLabel("Spectrogram Configuration")
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                font-weight: bold;
+                color: #E95420;
+                padding: 8px 0px;
+                border-bottom: 2px solid #DEDEDE;
+                margin-bottom: 5px;
+            }
+        """)
         layout.addWidget(title)
         
+        # FFT Parameters group
         settings_group = QGroupBox("FFT Parameters")
+        settings_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
         settings_layout = QVBoxLayout()
+        settings_layout.setContentsMargins(12, 15, 12, 12)
+        settings_layout.setSpacing(8)
         
         fft_label = QLabel("FFT Size:")
-        fft_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        fft_label.setStyleSheet("font-size: 12px; color: #333333; font-weight: bold;")
         settings_layout.addWidget(fft_label)
         
         self.fft_combo = QComboBox()
         self.fft_combo.addItems(["512", "1024", "2048", "4096", "8192"])
         self.fft_combo.setCurrentText("2048")
+        self.fft_combo.setStyleSheet("""
+            QComboBox {
+                font-size: 12px;
+                padding: 6px;
+                border: 1px solid #CCCCCC;
+                border-radius: 3px;
+                background-color: white;
+                min-height: 28px;
+            }
+            QComboBox:hover {
+                border: 1px solid #888888;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 25px;
+                border-left: 1px solid #CCCCCC;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid #333333;
+            }
+        """)
         settings_layout.addWidget(self.fft_combo)
         
         hop_label = QLabel("Hop Length:")
-        hop_label.setStyleSheet("font-weight: bold; margin-top: 8px; font-size: 11px;")
+        hop_label.setStyleSheet("font-size: 12px; color: #333333; font-weight: bold; margin-top: 8px;")
         settings_layout.addWidget(hop_label)
         
         self.hop_combo = QComboBox()
         self.hop_combo.addItems(["128", "256", "512", "1024", "2048"])
         self.hop_combo.setCurrentText("512")
+        self.hop_combo.setStyleSheet("""
+            QComboBox {
+                font-size: 12px;
+                padding: 6px;
+                border: 1px solid #CCCCCC;
+                border-radius: 3px;
+                background-color: white;
+                min-height: 28px;
+            }
+            QComboBox:hover {
+                border: 1px solid #888888;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 25px;
+                border-left: 1px solid #CCCCCC;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 5px solid #333333;
+            }
+        """)
         settings_layout.addWidget(self.hop_combo)
         
-        info_label = QLabel("💡 Higher FFT = better freq resolution")
+        info_label = QLabel("Higher FFT = better frequency resolution")
         info_label.setWordWrap(True)
-        info_label.setStyleSheet(
-            "margin-top: 8px; padding: 6px; background-color: #e3f2fd; "
-            "border-radius: 4px; font-size: 10px;"
-        )
+        info_label.setStyleSheet("""
+            QLabel {
+                margin-top: 12px;
+                padding: 8px;
+                background-color: white;
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #5E5E5E;
+                line-height: 1.4;
+            }
+        """)
         settings_layout.addWidget(info_label)
         
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
         
+        # Computation group
         compute_group = QGroupBox("Computation")
+        compute_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
         compute_layout = QVBoxLayout()
+        compute_layout.setContentsMargins(12, 15, 12, 12)
+        compute_layout.setSpacing(8)
         
-        self.compute_btn = QPushButton("⚡ Compute")
+        self.compute_btn = QPushButton("Compute Spectrogram")
         self.compute_btn.setEnabled(False)
-        self.compute_btn.setMinimumHeight(40)
+        self.compute_btn.setMinimumHeight(36)
         self.compute_btn.clicked.connect(self.compute_spectrogram)
         self.compute_btn.setStyleSheet("""
-            QPushButton:enabled {
-                background-color: #4CAF50;
+            QPushButton {
+                background-color: #E95420;
                 color: white;
                 font-weight: bold;
                 font-size: 13px;
+                border: none;
+                border-radius: 4px;
+                padding: 8px;
+            }
+            QPushButton:enabled:hover {
+                background-color: #D34615;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+                color: #888888;
             }
         """)
         compute_layout.addWidget(self.compute_btn)
@@ -85,28 +202,71 @@ class SpectrogramPanel(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setMaximumHeight(20)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                background-color: white;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: #E95420;
+                border-radius: 2px;
+            }
+        """)
         compute_layout.addWidget(self.progress_bar)
         
         self.status_label = QLabel("Load file first")
-        self.status_label.setStyleSheet(
-            "padding: 6px; background-color: #f9f9f9; "
-            "border-radius: 4px; font-size: 10px;"
-        )
+        self.status_label.setStyleSheet("""
+            QLabel {
+                padding: 10px;
+                background-color: white;
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #333333;
+                line-height: 1.4;
+            }
+        """)
         self.status_label.setWordWrap(True)
         compute_layout.addWidget(self.status_label)
         
         compute_group.setLayout(compute_layout)
         layout.addWidget(compute_group)
         
-        results_group = QGroupBox("Info")
+        # Info group
+        results_group = QGroupBox("Information")
+        results_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
         results_layout = QVBoxLayout()
+        results_layout.setContentsMargins(12, 15, 12, 12)
         
         self.results_label = QLabel("No data")
         self.results_label.setWordWrap(True)
-        self.results_label.setStyleSheet(
-            "padding: 8px; background-color: #f9f9f9; "
-            "border-radius: 5px; font-size: 10px;"
-        )
+        self.results_label.setStyleSheet("""
+            QLabel {
+                padding: 10px;
+                background-color: white;
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #333333;
+                line-height: 1.4;
+            }
+        """)
         results_layout.addWidget(self.results_label)
         
         results_group.setLayout(results_layout)
@@ -131,7 +291,7 @@ class SpectrogramPanel(QWidget):
         
     def compute_spectrogram(self):
         if not self.current_file:
-            self.status_label.setText("⚠️ No file")
+            self.status_label.setText("No file selected")
             return
             
         n_fft = int(self.fft_combo.currentText())
@@ -187,28 +347,29 @@ class SpectrogramPanel(QWidget):
             
             if file_count > 1:
                 self.results_label.setText(
-                    f"✅ Success ({file_count} files)<br>"
+                    f"Success ({file_count} files)<br>"
                     f"<b>Total Duration:</b> {time_duration:.2f}s<br>"
                     f"<b>Max Freq:</b> {max_freq:.0f} Hz<br>"
                     f"<b>Time Frames:</b> {len(result['times'])}<br>"
                     f"<b>Freq Bins:</b> {len(result['frequencies'])}<br>"
                     f"<b>Avg per file:</b> {time_duration/file_count:.1f}s"
                 )
-                self.status_label.setText(f"✅ {file_count} files concatenated!")
+                self.status_label.setText(f"{file_count} files concatenated!")
             else:
                 self.results_label.setText(
-                    f"✅ Success<br>"
+                    f"Success<br>"
                     f"<b>Duration:</b> {time_duration:.2f}s<br>"
                     f"<b>Max Freq:</b> {max_freq:.0f} Hz<br>"
                     f"<b>Time Frames:</b> {len(result['times'])}<br>"
                     f"<b>Freq Bins:</b> {len(result['frequencies'])}"
                 )
-                self.status_label.setText("✅ Done!")
+                self.status_label.setText("Done!")
             
             self.spectrogram_computed.emit(result)
         else:
-            self.results_label.setText("❌ Error")
-            self.status_label.setText("❌ Failed") 
+            self.results_label.setText("Error")
+            self.status_label.setText("Failed")
+            
     def download_s3_file(self, s3_uri):
         """Download file from S3 to local cache"""
         import boto3
@@ -225,7 +386,7 @@ class SpectrogramPanel(QWidget):
         local_path = os.path.join(cache_dir, filename)
         
         if os.path.exists(local_path):
-            self.status_label.setText(f"✅ Using cached file")
+            self.status_label.setText(f"Using cached file")
             return local_path
         
         # Load credentials
@@ -245,12 +406,12 @@ class SpectrogramPanel(QWidget):
                     pass
         
         if not creds:
-            self.status_label.setText("❌ No credentials found")
+            self.status_label.setText("No credentials found")
             return None
         
         # Download from S3
         try:
-            self.status_label.setText(f"⬇️ Downloading from S3...")
+            self.status_label.setText(f"Downloading from S3...")
             
             session = boto3.session.Session()
             s3 = session.client(
@@ -264,12 +425,12 @@ class SpectrogramPanel(QWidget):
             bucket = creds.get('bucket', 'ecosurf-dataset')
             s3.download_file(bucket, s3_path, local_path)
             
-            self.status_label.setText(f"✅ Downloaded successfully")
+            self.status_label.setText(f"Downloaded successfully")
             return local_path
             
         except (BotoCoreError, ClientError) as e:
-            self.status_label.setText(f"❌ S3 error: {str(e)[:50]}")
+            self.status_label.setText(f"S3 error: {str(e)[:50]}")
             return None
         except Exception as e:
-            self.status_label.setText(f"❌ Download error: {str(e)[:50]}")
+            self.status_label.setText(f"Download error: {str(e)[:50]}")
             return None

@@ -28,7 +28,7 @@ from ui.components.spectrogram_widget import SpectrogramWidget
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Jungle Audio Pattern Search Tool - Professional Edition")
+        self.setWindowTitle("Jungle Audio Pattern Search Tool")
         self.setGeometry(100, 100, 1600, 900)
         
         # Shared state
@@ -48,7 +48,7 @@ class MainWindow(QMainWindow):
         # Panel visibility state
         self.left_panel_visible = True
         self.bottom_panel_visible = True
-        
+        self.right_panel_height = 1380  # Add this line to track right panel height
         self.init_ui()
         self.connect_signals()
         
@@ -73,57 +73,81 @@ class MainWindow(QMainWindow):
         
         # Add features
         features = [
-            "📁 File Management",
-            "📊 Spectrogram",
-            "🔍 View Controls",
-            "🔊 Audio Playback",
-            "🎨 Pattern Selection",
-            "🔎 Pattern Search"
+            "File Management",
+            "Spectrogram",
+            "View Controls",
+            "Audio Playback",
+            "Pattern Selection",
+            "Pattern Search"
         ]
         
         for feature in features:
             self.feature_list.addItem(feature)
         
         # Style the feature list
+        # Style the feature list - Ubuntu theme
+        # Style the feature list - Clean Ubuntu theme
         self.feature_list.setStyleSheet("""
             QListWidget {
-                background-color: #f5f5f5;
-                border: 1px solid #ddd;
-                border-radius: 0px;
+                background-color: #FAFAFA;
+                border: none;
+                border-right: 1px solid #DEDEDE;
+                font-size: 13px;
                 padding: 5px;
-                font-size: 12px;
+                outline: none;  /* Remove focus outline */
             }
             QListWidget::item {
-                padding: 10px;
+                padding: 10px 12px;
+                margin: 2px 5px;
+                color: #333333;
                 border-radius: 3px;
-                margin: 2px;
+                border: 1px solid transparent;  /* Prevents visual glitches */
             }
             QListWidget::item:selected {
-                background-color: #4CAF50;
+                background-color: #E95420;  /* Ubuntu orange */
+                color: white;
+                font-weight: bold;
+                border: 1px solid #E95420;  /* Match border to background */
+            }
+            QListWidget::item:selected:!active {
+                background-color: #E95420;  /* Ensure consistent color */
                 color: white;
             }
-            QListWidget::item:hover {
-                background-color: #e0e0e0;
+            QListWidget::item:selected:focus {
+                background-color: #E95420;
+                color: white;
+                border: 1px solid #E95420;
+            }
+            QListWidget::item:hover:!selected {
+                background-color: #F2F2F2;
+                border: 1px solid #E0E0E0;
+            }
+            /* Remove focus rectangle */
+            QListWidget::item:focus {
+                outline: none;
+                border: none;
             }
         """)
         
         self.feature_list.currentRowChanged.connect(self.on_feature_changed)
         
         # Left toggle button
+      # Left toggle button - Ubuntu theme
         self.left_toggle_btn = QPushButton("◀")
         self.left_toggle_btn.setMaximumWidth(20)
         self.left_toggle_btn.setMinimumHeight(100)
         self.left_toggle_btn.clicked.connect(self.toggle_left_panel)
         self.left_toggle_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4CAF50;
-                color: white;
+                background-color: #F2F2F2;
+                color: #333333;
                 font-weight: bold;
                 border: none;
-                font-size: 16px;
+                font-size: 14px;
+                border-left: 1px solid #DEDEDE;
             }
             QPushButton:hover {
-                background-color: #45a049;
+                background-color: #E5E5E5;
             }
         """)
         
@@ -133,30 +157,52 @@ class MainWindow(QMainWindow):
         # Right side - Stacked panels and spectrogram
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(5, 5, 5, 5)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(0)
         
         # Top: Spectrogram display with viewport scrollbar underneath
         spectrogram_container = QWidget()
         spec_layout = QVBoxLayout(spectrogram_container)
-        spec_layout.setContentsMargins(0, 0, 0, 0)
+        spec_layout.setContentsMargins(10, 10, 10, 5)  # Add some padding
         spec_layout.setSpacing(5)
         
         self.spectrogram_widget = SpectrogramWidget()
         spec_layout.addWidget(self.spectrogram_widget)
         
         # Viewport scrollbar directly under spectrogram
+        # Viewport scrollbar - Ubuntu theme
         self.viewport_scroll = QScrollBar(Qt.Orientation.Horizontal)
         self.viewport_scroll.setMinimum(0)
         self.viewport_scroll.setMaximum(100)
         self.viewport_scroll.setValue(0)
         self.viewport_scroll.setEnabled(False)
         self.viewport_scroll.valueChanged.connect(self.on_viewport_scroll)
+        self.viewport_scroll.setStyleSheet("""
+            QScrollBar:horizontal {
+                border: 1px solid #DEDEDE;
+                background: #FAFAFA;
+                height: 12px;
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #CCCCCC;
+                min-width: 20px;
+                border-radius: 6px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #AAAAAA;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+            }
+        """)
         spec_layout.addWidget(self.viewport_scroll)
         
         right_layout.addWidget(spectrogram_container, stretch=3)
         
         # Bottom: Feature panels with toggle button
         bottom_container = QWidget()
+        bottom_container.setStyleSheet("background-color: #FAFAFA; border-top: 1px solid #DEDEDE;")
         bottom_layout = QVBoxLayout(bottom_container)
         bottom_layout.setContentsMargins(0, 0, 0, 0)
         bottom_layout.setSpacing(0)
@@ -167,14 +213,17 @@ class MainWindow(QMainWindow):
         self.bottom_toggle_btn.clicked.connect(self.toggle_bottom_panel)
         self.bottom_toggle_btn.setStyleSheet("""
             QPushButton {
-                background-color: #2196F3;
-                color: white;
+                background-color: #F2F2F2;
+                color: #333333;
                 font-weight: bold;
                 border: none;
                 font-size: 11px;
+                border-top: 1px solid #DEDEDE;
+                border-bottom: 1px solid #DEDEDE;
+                padding: 4px;
             }
             QPushButton:hover {
-                background-color: #1976D2;
+                background-color: #E5E5E5;
             }
         """)
         
@@ -209,54 +258,64 @@ class MainWindow(QMainWindow):
         
         main_layout.addWidget(self.main_splitter)
         
-        # Animations for panels
-        self.left_animation = QPropertyAnimation(left_container, b"maximumWidth")
-        self.left_animation.setDuration(300)
-        self.left_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        # # Animations for panels
+        # self.left_animation = QPropertyAnimation(left_container, b"maximumWidth")
+        # self.left_animation.setDuration(300)
+        # self.left_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         
-        self.bottom_animation = QPropertyAnimation(self.panel_stack, b"maximumHeight")
-        self.bottom_animation.setDuration(300)
-        self.bottom_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        # self.bottom_animation = QPropertyAnimation(self.panel_stack, b"maximumHeight")
+        # self.bottom_animation.setDuration(300)
+        # self.bottom_animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
         
         # Select first feature by default
         self.feature_list.setCurrentRow(0)
         
     def toggle_left_panel(self):
-        """Toggle left sidebar visibility"""
+        """Toggle left sidebar visibility - completely close like Ubuntu"""
         if self.left_panel_visible:
-            # Hide
-            self.left_animation.setStartValue(220)
-            self.left_animation.setEndValue(20)
-            self.left_toggle_btn.setText("▶")
+            # Completely hide left panel
             self.feature_list.hide()
+            self.feature_list.setMaximumWidth(0)
+            self.feature_list.setMinimumWidth(0)
+            self.left_toggle_btn.setText(">")
+            self.left_toggle_btn.setToolTip("Show sidebar")
             self.left_panel_visible = False
+            self.main_splitter.setSizes([20, 1580])  # Minimal width for toggle button only
         else:
-            # Show
-            self.left_animation.setStartValue(20)
-            self.left_animation.setEndValue(220)
-            self.left_toggle_btn.setText("◀")
+            # Show left panel
             self.feature_list.show()
+            self.feature_list.setMaximumWidth(220)
+            self.feature_list.setMinimumWidth(220)
+            self.left_toggle_btn.setText("◀")
+            self.left_toggle_btn.setToolTip("Hide sidebar")
             self.left_panel_visible = True
-            
-        self.left_animation.start()
-        
+            self.main_splitter.setSizes([220, 1380])
+
     def toggle_bottom_panel(self):
-        """Toggle bottom panel visibility"""
+        """Toggle bottom panel visibility - completely close like Ubuntu"""
         if self.bottom_panel_visible:
-            # Hide
-            current_height = self.panel_stack.height()
-            self.bottom_animation.setStartValue(current_height)
-            self.bottom_animation.setEndValue(0)
-            self.bottom_toggle_btn.setText("▲ Show Controls")
+            # Completely hide bottom panel
+            self.panel_stack.hide()
+            self.panel_stack.setMaximumHeight(0)
+            self.bottom_toggle_btn.setText("Show Controls")
             self.bottom_panel_visible = False
+            
+            # Store current right panel size before hiding
+            self.right_panel_height = self.main_splitter.sizes()[1]
+            # Make spectrogram take all available space
+            self.main_splitter.setSizes([220 if self.left_panel_visible else 20, self.right_panel_height])
         else:
-            # Show
-            self.bottom_animation.setStartValue(0)
-            self.bottom_animation.setEndValue(400)
-            self.bottom_toggle_btn.setText("▼ Hide Controls")
+            # Show bottom panel
+            self.panel_stack.show()
+            self.panel_stack.setMaximumHeight(16777215)  # Qt's maximum
+            self.bottom_toggle_btn.setText("Hide Controls")
             self.bottom_panel_visible = True
             
-        self.bottom_animation.start()
+            # Restore splitter sizes
+            if self.left_panel_visible:
+                self.main_splitter.setSizes([220, 1380])
+            else:
+                self.main_splitter.setSizes([20, 1580])
     def on_period_dict_loaded(self, period_dict):
         """Handle period dictionary loaded from file panel"""
         # Pass to search panel for accelerated searching

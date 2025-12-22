@@ -41,7 +41,7 @@ class AudioProcessor(QThread):
             for i, fp in enumerate(self.file_path):
                 print(f"  [{i}] {fp}")
                 if not fp or not fp.startswith('s3://'):
-                    print(f"  ⚠️ WARNING: Invalid path at index {i}: '{fp}'")
+                    print(f"  WARNING: Invalid path at index {i}: '{fp}'")
         try:
             # --- CHECK IF S3 URI ---
             if isinstance(self.file_path, str) and self.file_path.startswith('s3://'):
@@ -96,11 +96,11 @@ class AudioProcessor(QThread):
                 
                 # 5. LOAD AUDIO FROM BYTES
                 audio, sr = librosa.load(
-                    io.BytesIO(audio_bytes),
-                    offset=self.time_range[0],
-                    duration=self.time_range[1]-self.time_range[0],
-                    sr=None
-                )
+                        io.BytesIO(audio_bytes),
+                        offset=self.time_range[0],
+                        duration=self.time_range[1]-self.time_range[0],
+                        sr=None
+                    )
                 
             else:
                 # LOCAL FILE - existing code

@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QProgressBar, QListWidget, QFileDialog, QScrollArea
 )
 from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtWidgets import QFrame
 
 from ui.workers.pattern_search_w import PatternSearchThread
 
@@ -20,7 +21,7 @@ class SearchPanel(QWidget):
         self.search_thread = None
         self.file_list = []
         self.audio_data = None
-        self.period_dict = {}  # <-- ADD THIS LINE
+        self.period_dict = {}
         self.init_ui()
         
     def init_ui(self):
@@ -32,22 +33,50 @@ class SearchPanel(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         
         # Content widget
         content = QWidget()
         layout = QVBoxLayout(content)
+        layout.setSpacing(12)
         
-        # Title
+        # Ubuntu-style title
         title = QLabel("Pattern Search")
-        title.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 5px;")
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                font-weight: bold;
+                color: #E95420;
+                padding: 8px 0px;
+                border-bottom: 2px solid #DEDEDE;
+                margin-bottom: 5px;
+            }
+        """)
         layout.addWidget(title)
         
         # Settings group
-        settings_group = QGroupBox("Settings")
+        settings_group = QGroupBox("Search Settings")
+        settings_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
         settings_layout = QVBoxLayout()
+        settings_layout.setContentsMargins(12, 15, 12, 12)
+        settings_layout.setSpacing(8)
         
-        threshold_label = QLabel("Similarity:")
-        threshold_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        threshold_label = QLabel("Similarity Threshold:")
+        threshold_label.setStyleSheet("font-size: 12px; color: #333333; font-weight: bold;")
         settings_layout.addWidget(threshold_label)
         
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
@@ -55,81 +84,252 @@ class SearchPanel(QWidget):
         self.threshold_slider.setMaximum(99)
         self.threshold_slider.setValue(70)
         self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
+        self.threshold_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                border: 1px solid #CCCCCC;
+                height: 6px;
+                background: white;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background: #E95420;
+                border: 2px solid #E95420;
+                width: 18px;
+                margin: -7px 0;
+                border-radius: 9px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #D34615;
+                border: 2px solid #D34615;
+            }
+            QSlider::add-page:horizontal {
+                background: #E0E0E0;
+                border-radius: 3px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #E95420;
+                border-radius: 3px;
+            }
+        """)
         settings_layout.addWidget(self.threshold_slider)
         
         self.threshold_label = QLabel("0.70")
-        self.threshold_label.setStyleSheet("color: #666; font-size: 10px;")
+        self.threshold_label.setStyleSheet("""
+            QLabel {
+                color: #5E5E5E;
+                font-size: 11px;
+                font-weight: bold;
+                padding-left: 5px;
+            }
+        """)
         settings_layout.addWidget(self.threshold_label)
         
-        threshold_info = QLabel("💡 Higher = stricter match")
+        threshold_info = QLabel("Higher value = stricter matching (0.50-0.99)")
         threshold_info.setWordWrap(True)
-        threshold_info.setStyleSheet(
-            "margin-top: 3px; padding: 4px; background-color: #e3f2fd; "
-            "border-radius: 4px; font-size: 10px;"
-        )
+        threshold_info.setStyleSheet("""
+            QLabel {
+                margin-top: 8px;
+                padding: 8px;
+                background-color: white;
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #5E5E5E;
+                line-height: 1.3;
+            }
+        """)
         settings_layout.addWidget(threshold_info)
         
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
         
         # Search controls group
-        controls_group = QGroupBox("Controls")
+        controls_group = QGroupBox("Search Controls")
+        controls_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
         controls_layout = QVBoxLayout()
+        controls_layout.setContentsMargins(12, 15, 12, 12)
+        controls_layout.setSpacing(10)
         
-        self.search_btn = QPushButton("🔍 Search")
+        # Ubuntu-style search button
+        self.search_btn = QPushButton("Start Search")
         self.search_btn.setEnabled(False)
-        self.search_btn.setMinimumHeight(40)
+        self.search_btn.setMinimumHeight(36)
         self.search_btn.clicked.connect(self.on_start_search)
         self.search_btn.setStyleSheet("""
-            QPushButton:enabled {
-                background-color: #FF9800;
+            QPushButton {
+                background-color: #E95420;
                 color: white;
-                font-size: 13px;
                 font-weight: bold;
+                font-size: 13px;
+                border: none;
+                border-radius: 4px;
+                padding: 8px;
+            }
+            QPushButton:enabled:hover {
+                background-color: #D34615;
+            }
+            QPushButton:disabled {
+                background-color: #CCCCCC;
+                color: #888888;
             }
         """)
         controls_layout.addWidget(self.search_btn)
         
-        self.stop_btn = QPushButton("⏹ Stop")
+        # Ubuntu-style stop button
+        self.stop_btn = QPushButton("Stop Search")
         self.stop_btn.setEnabled(False)
         self.stop_btn.setMinimumHeight(32)
         self.stop_btn.clicked.connect(self.on_stop_search)
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #F2F2F2;
+                color: #333333;
+                font-size: 12px;
+                border: 1px solid #CCCCCC;
+                border-radius: 4px;
+                padding: 6px;
+            }
+            QPushButton:hover:enabled {
+                background-color: #E5E5E5;
+                border: 1px solid #888888;
+            }
+            QPushButton:disabled {
+                background-color: #FAFAFA;
+                color: #BBBBBB;
+                border: 1px solid #E0E0E0;
+            }
+        """)
         controls_layout.addWidget(self.stop_btn)
         
+        # Ubuntu-style progress bar
         self.progress_bar = QProgressBar()
-        self.progress_bar.setMaximumHeight(20)
+        self.progress_bar.setMaximumHeight(18)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                background-color: white;
+                text-align: center;
+                font-size: 10px;
+            }
+            QProgressBar::chunk {
+                background-color: #E95420;
+                border-radius: 2px;
+            }
+        """)
         controls_layout.addWidget(self.progress_bar)
         
-        self.status_label = QLabel("Load folder & extract pattern")
-        self.status_label.setStyleSheet(
-            "padding: 6px; background-color: #f9f9f9; "
-            "border-radius: 4px; font-size: 10px;"
-        )
+        self.status_label = QLabel("Load folder & extract pattern first")
         self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet("""
+            QLabel {
+                padding: 10px;
+                background-color: white;
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #333333;
+                line-height: 1.4;
+                text-align: center;
+            }
+        """)
         controls_layout.addWidget(self.status_label)
         
         controls_group.setLayout(controls_layout)
         layout.addWidget(controls_group)
         
         # Results group
-        results_group = QGroupBox("Results")
+        results_group = QGroupBox("Search Results")
+        results_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
         results_layout = QVBoxLayout()
+        results_layout.setContentsMargins(12, 15, 12, 12)
+        results_layout.setSpacing(8)
         
         self.results_list = QListWidget()
-        self.results_list.setStyleSheet("font-size: 10px;")
+        self.results_list.setStyleSheet("""
+            QListWidget {
+                background-color: white;
+                border: 1px solid #CCCCCC;
+                border-radius: 3px;
+                font-size: 11px;
+            }
+            QListWidget::item {
+                padding: 6px 8px;
+                border-bottom: 1px solid #F0F0F0;
+            }
+            QListWidget::item:selected {
+                background-color: #E95420;
+                color: white;
+                border-radius: 2px;
+            }
+            QListWidget::item:hover:!selected {
+                background-color: #F8F8F8;
+            }
+        """)
         self.results_list.itemDoubleClicked.connect(self.on_result_double_clicked)
         results_layout.addWidget(self.results_list)
         
-        export_btn = QPushButton("📊 Export CSV")
-        export_btn.setMinimumHeight(30)
+        # Ubuntu-style export button
+        export_btn = QPushButton("Export Results to CSV")
+        export_btn.setMinimumHeight(32)
         export_btn.clicked.connect(self.on_export_results)
+        export_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #77216F;
+                color: white;
+                font-size: 12px;
+                border: none;
+                border-radius: 4px;
+                padding: 6px;
+                margin-top: 5px;
+            }
+            QPushButton:hover {
+                background-color: #5E2750;
+            }
+        """)
         results_layout.addWidget(export_btn)
         
-        self.results_count_label = QLabel("No results")
-        self.results_count_label.setStyleSheet(
-            "padding: 4px; background-color: #f9f9f9; "
-            "border-radius: 4px; font-size: 10px;"
-        )
+        self.results_count_label = QLabel("No results yet")
+        self.results_count_label.setStyleSheet("""
+            QLabel {
+                padding: 8px;
+                background-color: white;
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #5E5E5E;
+                font-weight: bold;
+                text-align: center;
+            }
+        """)
         results_layout.addWidget(self.results_count_label)
         
         results_group.setLayout(results_layout)
@@ -183,7 +383,7 @@ class SearchPanel(QWidget):
     def start_search_with_pattern(self, pattern, audio):
         """Actually start the search with pattern"""
         if not pattern or len(self.file_list) == 0:
-            self.status_label.setText("⚠️ Missing data")
+            self.status_label.setText("Missing data")
             return
             
         threshold = self.threshold_slider.value() / 100
@@ -192,7 +392,7 @@ class SearchPanel(QWidget):
         self.search_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.progress_bar.setValue(0)
-        self.status_label.setText("🔍 Searching...")
+        self.status_label.setText("Searching...")
         
         self.search_thread = PatternSearchThread(
             pattern, audio, self.file_list, threshold
@@ -232,7 +432,7 @@ class SearchPanel(QWidget):
         self.search_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         count = self.results_list.count()
-        self.status_label.setText(f"✅ Complete! {count} matches")
+        self.status_label.setText(f"Complete! {count} matches")
         self.results_count_label.setText(f"Total: {count}")
         
     def on_result_double_clicked(self, item):
@@ -248,7 +448,7 @@ class SearchPanel(QWidget):
     def on_export_results(self):
         """Export results to CSV"""
         if self.results_list.count() == 0:
-            self.status_label.setText("⚠️ No results")
+            self.status_label.setText("No results")
             return
             
         file_path, _ = QFileDialog.getSaveFileName(
@@ -263,6 +463,6 @@ class SearchPanel(QWidget):
                         text = self.results_list.item(i).text()
                         f.write(text.replace(' | ', ',') + '\n')
                         
-                self.status_label.setText(f"✅ Exported")
+                self.status_label.setText(f"Exported")
             except Exception as e:
-                self.status_label.setText(f"❌ Error")
+                self.status_label.setText(f"Error")
