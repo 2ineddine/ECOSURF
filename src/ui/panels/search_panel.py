@@ -148,7 +148,12 @@ class SearchPanel(QWidget):
         """Set the list of files to search in"""
         self.file_list = file_list
         self.update_search_button_state()
-        self.status_label.setText(f"Ready: {len(file_list)} files")
+        
+        # Check if database or local files
+        if file_list and any(f.startswith('s3://') for f in file_list):
+            self.status_label.setText(f"Ready: {len(file_list)} files (Database)")
+        else:
+            self.status_label.setText(f"Ready: {len(file_list)} files (Local)")
         
     def set_audio_data(self, audio_data):
         """Set the audio data (needed for pattern extraction)"""

@@ -62,20 +62,28 @@ class SpectrogramWidget(QWidget):
         self.times = times
         self.time_offset = time_offset
 
-        # Default viewport duration: show up to 60s in the first view
+        # FIX FOR MULTI-FILE: Show only 60s even for long concatenated spectrograms
         if times is not None and len(times) > 1:
             total_dur = float(times[-1])
+            # Always show max 60s viewport, but allow scrolling for longer files
             self.viewport_duration = min(60.0, total_dur)
+            # Reset to start
+            self.viewport_start = 0.0
+        else:
+            # For empty or single files, keep original logic
+            self.viewport_duration = 60.0
+            self.viewport_start = 0.0
 
-        self.viewport_start = 0.0
         self.zoomed = False
         self.zoom_time_range = None
         self.zoom_freq_range = None
         self.playback_position = None
 
-        if spec_data is not None and len(times)>1:
+        if spec_data is not None and len(times) > 1:
             height, width = spec_data.shape
             self.mask = np.zeros((height, width), dtype=np.uint8)
+        else:
+            self.mask = None
 
         # cached pixmaps for performance
         self.display_pixmap = None
@@ -260,10 +268,28 @@ class SpectrogramWidget(QWidget):
 
 
     def apply_colormap(self, data):
+        """Hot colormap (like MATLAB's hot) - good for spectrograms"""
+        if data.size == 0:
+            return np.zeros((*data.shape, 3), dtype=np.uint8)
+        
+        # Normalize to 0-1
+        dmin = np.min(data)
+        dmax = np.max(data)
+        if dmax - dmin > 1e-10:
+            norm_data = (data - dmin) / (dmax - dmin)
+        else:
+            norm_data = data * 0
+        
+        # Hot colormap implementation
         colored = np.zeros((*data.shape, 3), dtype=np.uint8)
-        colored[:, :, 0] = (data * 255).astype(np.uint8)
-        colored[:, :, 1] = (data * 200).astype(np.uint8)
-        colored[:, :, 2] = (data * 100).astype(np.uint8)
+        
+        # Red: ramp up quickly
+        colored[:, :, 0] = np.clip(norm_data * 1.7 * 255, 0, 255).astype(np.uint8)
+        # Green: ramp up in middle
+        colored[:, :, 1] = np.clip((norm_data * 1.5 - 0.3) * 255, 0, 255).astype(np.uint8)
+        # Blue: only at high values
+        colored[:, :, 2] = np.clip((norm_data * 3 - 2) * 255, 0, 255).astype(np.uint8)
+        
         return colored
 
     def paintEvent(self, event):
@@ -278,7 +304,10 @@ class SpectrogramWidget(QWidget):
 
         # Prepare font
         painter.setPen(QPen(QColor(0, 0, 0), 1))
-        painter.setFont(QFont("Arial", 9))
+        font = painter.font()
+        if font.pointSize() <= 0:
+            font.setPointSize(10)
+        painter.setFont(font)
 
         # ---- Retrieve viewport indices ----
         start_idx, end_idx = self.get_viewport_indices()

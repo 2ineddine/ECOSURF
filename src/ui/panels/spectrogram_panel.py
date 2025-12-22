@@ -5,7 +5,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import pyqtSignal, Qt
 
 from ui.workers.audio_processor_w import AudioProcessor
-
+import os
+from ui.workers.multifile_processor import MultiFileAudioProcessor
 
 class SpectrogramPanel(QWidget):
     spectrogram_computed = pyqtSignal(object)
@@ -116,11 +117,17 @@ class SpectrogramPanel(QWidget):
         scroll.setWidget(content)
         main_layout.addWidget(scroll)
         
-    def set_file(self, file_path, time_range):
+    def set_file(self, file_path, time_range, source_type='local'):
+        """Set file with source type (database or local)"""
         self.current_file = file_path
         self.current_time_range = time_range
+        self.source_type = source_type  # Store source type
         self.compute_btn.setEnabled(True)
-        self.status_label.setText("Ready to compute")
+        
+        if source_type == 'database':
+            self.status_label.setText("Ready to compute (Database file)")
+        else:
+            self.status_label.setText("Ready to compute (Local file)")
         
     def compute_spectrogram(self):
         if not self.current_file:
@@ -130,6 +137,28 @@ class SpectrogramPanel(QWidget):
         n_fft = int(self.fft_combo.currentText())
         hop_length = int(self.hop_combo.currentText())
         
+        # Check if it's a list (multiple files)
+        if isinstance(self.current_file, list):
+            self.compute_multiple_files(n_fft, hop_length)
+        else:
+            self.compute_single_file(n_fft, hop_length)
+
+    def compute_multiple_files(self, n_fft, hop_length):
+        """Multiple file computation - NO DOWNLOAD"""
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.compute_btn.setEnabled(False)
+        self.status_label.setText(f"Computing {len(self.current_file)} files...")
+        
+        self.processor = MultiFileAudioProcessor(
+            self.current_file, n_fft, hop_length, self.current_time_range
+        )
+        self.processor.progress.connect(self.on_progress)
+        self.processor.finished.connect(self.on_finished)
+        self.processor.start()
+
+    def compute_single_file(self, n_fft, hop_length):
+        """Single file computation - NO DOWNLOAD"""
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
         self.compute_btn.setEnabled(False)
@@ -141,7 +170,7 @@ class SpectrogramPanel(QWidget):
         self.processor.progress.connect(self.on_progress)
         self.processor.finished.connect(self.on_finished)
         self.processor.start()
-        
+
     def on_progress(self, value):
         self.progress_bar.setValue(value)
         
@@ -153,16 +182,94 @@ class SpectrogramPanel(QWidget):
             max_freq = result['frequencies'][-1]
             time_duration = result['times'][-1]
             
-            self.results_label.setText(
-                f"✅ Success<br>"
-                f"<b>Duration:</b> {time_duration:.2f}s<br>"
-                f"<b>Max Freq:</b> {max_freq:.0f} Hz<br>"
-                f"<b>Time Frames:</b> {len(result['times'])}<br>"
-                f"<b>Freq Bins:</b> {len(result['frequencies'])}"
-            )
+            # Check if this is multi-file result
+            file_count = result.get('file_count', 1)
             
-            self.status_label.setText("✅ Done!")
+            if file_count > 1:
+                self.results_label.setText(
+                    f"✅ Success ({file_count} files)<br>"
+                    f"<b>Total Duration:</b> {time_duration:.2f}s<br>"
+                    f"<b>Max Freq:</b> {max_freq:.0f} Hz<br>"
+                    f"<b>Time Frames:</b> {len(result['times'])}<br>"
+                    f"<b>Freq Bins:</b> {len(result['frequencies'])}<br>"
+                    f"<b>Avg per file:</b> {time_duration/file_count:.1f}s"
+                )
+                self.status_label.setText(f"✅ {file_count} files concatenated!")
+            else:
+                self.results_label.setText(
+                    f"✅ Success<br>"
+                    f"<b>Duration:</b> {time_duration:.2f}s<br>"
+                    f"<b>Max Freq:</b> {max_freq:.0f} Hz<br>"
+                    f"<b>Time Frames:</b> {len(result['times'])}<br>"
+                    f"<b>Freq Bins:</b> {len(result['frequencies'])}"
+                )
+                self.status_label.setText("✅ Done!")
+            
             self.spectrogram_computed.emit(result)
         else:
             self.results_label.setText("❌ Error")
-            self.status_label.setText("❌ Failed")
+            self.status_label.setText("❌ Failed") 
+    def download_s3_file(self, s3_uri):
+        """Download file from S3 to local cache"""
+        import boto3
+        import json
+        from botocore.exceptions import BotoCoreError, ClientError
+        
+        # Extract S3 path
+        s3_path = s3_uri.replace('s3://ecosurf-dataset/', '')
+        filename = os.path.basename(s3_path)
+        
+        # Check if already downloaded
+        cache_dir = os.path.join('downloads', 'cache')
+        os.makedirs(cache_dir, exist_ok=True)
+        local_path = os.path.join(cache_dir, filename)
+        
+        if os.path.exists(local_path):
+            self.status_label.setText(f"✅ Using cached file")
+            return local_path
+        
+        # Load credentials
+        cred_paths = [
+            os.path.join(os.getcwd(), 'credentials.json'),
+            os.path.join(os.path.expanduser('~'), '.config', 'ecosurf', 'credentials.json')
+        ]
+        
+        creds = None
+        for cp in cred_paths:
+            if os.path.exists(cp):
+                try:
+                    with open(cp, 'r') as f:
+                        creds = json.load(f)
+                    break
+                except:
+                    pass
+        
+        if not creds:
+            self.status_label.setText("❌ No credentials found")
+            return None
+        
+        # Download from S3
+        try:
+            self.status_label.setText(f"⬇️ Downloading from S3...")
+            
+            session = boto3.session.Session()
+            s3 = session.client(
+                's3',
+                region_name=creds.get('region'),
+                aws_access_key_id=creds.get('ACCESS_KEY'),
+                aws_secret_access_key=creds.get('SECRET_KEY'),
+                endpoint_url=creds.get('endpoint')
+            )
+            
+            bucket = creds.get('bucket', 'ecosurf-dataset')
+            s3.download_file(bucket, s3_path, local_path)
+            
+            self.status_label.setText(f"✅ Downloaded successfully")
+            return local_path
+            
+        except (BotoCoreError, ClientError) as e:
+            self.status_label.setText(f"❌ S3 error: {str(e)[:50]}")
+            return None
+        except Exception as e:
+            self.status_label.setText(f"❌ Download error: {str(e)[:50]}")
+            return None

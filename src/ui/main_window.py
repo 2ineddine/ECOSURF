@@ -267,8 +267,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Loaded period dictionary: {len(period_dict)} entries", 3000)
     def connect_signals(self):
         """Connect all inter-panel signals"""
-        self.file_panel.file_loaded.connect(self.on_file_loaded)
-        # File panel signals
+        self.file_panel.file_loaded.connect(self.on_file_loaded_with_source)        # File panel signals
         self.file_panel.search_scope_changed.connect(self.on_search_scope_changed)
         self.file_panel.period_dict_loaded.connect(self.on_period_dict_loaded)
         self.file_panel.folder_loaded.connect(self.on_folder_loaded)
@@ -313,13 +312,29 @@ class MainWindow(QMainWindow):
         """Switch displayed panel when feature is selected"""
         self.panel_stack.setCurrentIndex(index)
         
-    def on_file_loaded(self, file_path, time_range):
-        """Handle file loaded from file panel"""
-        self.current_file = file_path
+    # File: main_window.py
+# REPLACE the on_file_loaded_with_source method with this:
+
+    def on_file_loaded_with_source(self, file_path, time_range, source_type):
+        """Handle file loaded from file panel - accepts str OR list"""
+        self.current_file = file_path  # Can be str (single) or list (multiple)
         self.current_time_range = time_range
         
-        # Update spectrogram panel
-        self.spectrogram_panel.set_file(file_path, time_range)
+        # Update spectrogram panel with the file(s)
+        self.spectrogram_panel.set_file(file_path, time_range, source_type)
+        
+        # Update status in file panel based on single vs multiple files
+        if isinstance(file_path, list):
+            # Multiple files selected
+            self.file_panel.update_file_info(
+                f"Ready to compute {len(file_path)} files "
+                f"({len(file_path)*60:.0f}s total)"
+            )
+        else:
+            # Single file
+            self.file_panel.update_file_info(
+                f"Ready to compute (source: {source_type})"
+            )
         
     def on_folder_loaded(self, file_list):
         """Handle folder loaded from file panel"""

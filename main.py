@@ -10,7 +10,7 @@ if src_path not in sys.path:
 print(f"[ecosurf] using src path: {src_path}")
 
 from ui.main_window import MainWindow
-
+    
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

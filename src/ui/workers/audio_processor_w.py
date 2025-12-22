@@ -27,46 +27,117 @@ class AudioProcessor(QThread):
         self.hop_length = hop_length
         self.time_range = time_range
 
+    # File: ui/workers/audio_processor_w.py
+    # REPLACE the entire run() method with this:
+
     def run(self):
+        """Main computation thread - STREAMS FROM S3"""
+        """Main computation thread - STREAMS FROM S3"""
+        print(f"=== DEBUG: Starting processor ===")
+        print(f"File(s) to process: {self.file_path}")
+
+        if isinstance(self.file_path, list):
+            print(f"Total files in list: {len(self.file_path)}")
+            for i, fp in enumerate(self.file_path):
+                print(f"  [{i}] {fp}")
+                if not fp or not fp.startswith('s3://'):
+                    print(f"  ⚠️ WARNING: Invalid path at index {i}: '{fp}'")
         try:
-            audio, sr = sf.read(self.file_path)
-
-            if len(audio.shape) > 1:
-                audio = np.mean(audio, axis=1)
-
-            if self.time_range:
-                start_sample = int(self.time_range[0] * sr)
-                end_sample = int(self.time_range[1] * sr)
-                audio = audio[start_sample:end_sample]
-
-            self.progress.emit(30)
-
-            freqs, times, S_db = compute_spectrogram(audio, sr, n_fft=self.n_fft, hop_length=self.hop_length)
-
-            # Limit to 20kHz if present
-            max_freq_idx = np.searchsorted(freqs, 20000)
-            if max_freq_idx > 0 and max_freq_idx < len(freqs):
-                freqs = freqs[:max_freq_idx]
-                S_db = S_db[:max_freq_idx, :]
-
+            # --- CHECK IF S3 URI ---
+            if isinstance(self.file_path, str) and self.file_path.startswith('s3://'):
+                # 1. PARSE S3 URI
+                without_protocol = self.file_path[5:]  # Remove 's3://'
+                parts = without_protocol.split('/', 1)
+                if len(parts) == 2:
+                    bucket_name, s3_path = parts
+                else:
+                    bucket_name = parts[0]
+                    s3_path = ""
+                
+                # 2. LOAD CREDENTIALS
+                import json, os, boto3, io
+                cred_paths = [
+                    'credentials.json',
+                    os.path.join(os.getcwd(), 'credentials.json'),
+                    os.path.join(os.path.expanduser('~'), '.config', 'ecosurf', 'credentials.json')
+                ]
+                
+                creds = None
+                for cp in cred_paths:
+                    if os.path.exists(cp):
+                        try:
+                            with open(cp, 'r') as f:
+                                creds = json.load(f)
+                            break
+                        except:
+                            pass
+                
+                if not creds:
+                    self.finished.emit(None)
+                    return
+                
+                # 3. CONNECT TO S3
+                session = boto3.session.Session()
+                s3 = session.client(
+                    's3',
+                    region_name=creds.get('region', 'eu-west-2'),
+                    aws_access_key_id=creds.get('ACCESS_KEY'),
+                    aws_secret_access_key=creds.get('SECRET_KEY'),
+                    endpoint_url=creds.get('endpoint', 'https://s3.eu-west-2.wasabisys.com')
+                )
+                
+                self.progress.emit(10)
+                
+                # 4. DOWNLOAD TO MEMORY (NOT DISK)
+                response = s3.get_object(Bucket=bucket_name, Key=s3_path)
+                audio_bytes = response['Body'].read()
+                
+                self.progress.emit(30)
+                
+                # 5. LOAD AUDIO FROM BYTES
+                audio, sr = librosa.load(
+                    io.BytesIO(audio_bytes),
+                    offset=self.time_range[0],
+                    duration=self.time_range[1]-self.time_range[0],
+                    sr=None
+                )
+                
+            else:
+                # LOCAL FILE - existing code
+                audio, sr = librosa.load(
+                    self.file_path,
+                    offset=self.time_range[0],
+                    duration=self.time_range[1]-self.time_range[0]
+                )
+            
+            if audio is None or len(audio) == 0:
+                self.finished.emit(None)
+                return
+            
+            self.progress.emit(50)
+            
+            # --- COMPUTE SPECTROGRAM (EXISTING CODE) ---
+            stft = librosa.stft(audio, n_fft=self.n_fft, hop_length=self.hop_length)
             self.progress.emit(70)
-
-            Sxx_norm = (S_db - S_db.min()) / (S_db.max() - S_db.min()) if S_db.max() != S_db.min() else S_db * 0
-
-            self.progress.emit(100)
-
+            
+            spectrogram = librosa.amplitude_to_db(np.abs(stft), ref=np.max)
+            self.progress.emit(80)
+            
+            frequencies = librosa.fft_frequencies(sr=sr, n_fft=self.n_fft)
+            times = librosa.times_like(spectrogram, sr=sr, hop_length=self.hop_length)
+            
             result = {
-                'spectrogram': Sxx_norm,
-                'frequencies': freqs,
+                'spectrogram': spectrogram,
+                'frequencies': frequencies,
                 'times': times,
                 'sample_rate': sr,
                 'audio': audio,
-                'time_range': self.time_range,
-                'time_offset': self.time_range[0] if self.time_range else 0
+                'time_offset': self.time_range[0]
             }
-
+            
+            self.progress.emit(100)
             self.finished.emit(result)
-
+            
         except Exception as e:
-            print(f"Error processing audio: {e}")
+            print(f"Error in AudioProcessor: {e}")
             self.finished.emit(None)
