@@ -1,13 +1,12 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QComboBox, 
-    QGroupBox, QProgressBar, QScrollArea
+    QGroupBox, QProgressBar, QScrollArea, QHBoxLayout, QButtonGroup, QRadioButton
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import QFrame
 
 from ui.workers.audio_processor_w import AudioProcessor
 import os
-from ui.workers.multifile_processor import MultiFileAudioProcessor
 
 class SpectrogramPanel(QWidget):
     spectrogram_computed = pyqtSignal(object)
@@ -17,6 +16,8 @@ class SpectrogramPanel(QWidget):
         self.current_file = None
         self.current_time_range = None
         self.processor = None
+        self.recording_type = "canopé"  # Default
+        self.source_type = "local"  # Default to local
         self.init_ui()
         
     def init_ui(self):
@@ -45,6 +46,72 @@ class SpectrogramPanel(QWidget):
             }
         """)
         layout.addWidget(title)
+        
+        # Recording Type group
+        type_group = QGroupBox("Recording Type")
+        type_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #DEDEDE;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                background-color: #FAFAFA;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0px 5px 0px 5px;
+            }
+        """)
+        type_layout = QHBoxLayout()
+        type_layout.setContentsMargins(12, 15, 12, 12)
+        type_layout.setSpacing(15)
+        
+        # Radio buttons for canopé/ground
+        self.canope_radio = QRadioButton("Canopé") #1   
+        self.ground_radio = QRadioButton("Ground") #0
+        
+        radio_style = """
+            QRadioButton {
+                font-size: 12px;
+                color: #333333;
+                padding: 8px 0px;
+            }
+            QRadioButton::indicator {
+                width: 16px;
+                height: 16px;
+            }
+            QRadioButton::indicator:checked {
+                background-color: #E95420;
+                border: 3px solid white;
+                border-radius: 8px;
+                outline: 2px solid #E95420;
+            }
+            QRadioButton::indicator:unchecked {
+                background-color: white;
+                border: 2px solid #CCCCCC;
+                border-radius: 8px;
+            }
+        """
+        self.canope_radio.setStyleSheet(radio_style)
+        self.ground_radio.setStyleSheet(radio_style)
+        
+        # Set default
+        self.canope_radio.setChecked(True)
+        
+        # Button group
+        self.type_group = QButtonGroup(self)
+        self.type_group.addButton(self.canope_radio, 1)
+        self.type_group.addButton(self.ground_radio, 2)
+        self.type_group.buttonClicked.connect(self.on_type_changed)
+        
+        type_layout.addWidget(self.canope_radio)
+        type_layout.addWidget(self.ground_radio)
+        type_layout.addStretch()
+        
+        type_group.setLayout(type_layout)
+        layout.addWidget(type_group)
         
         # FFT Parameters group
         settings_group = QGroupBox("FFT Parameters")
@@ -199,6 +266,22 @@ class SpectrogramPanel(QWidget):
         """)
         compute_layout.addWidget(self.compute_btn)
         
+        # Type indicator
+        self.type_indicator = QLabel("Type: Canopé (Channel 1)")
+        self.type_indicator.setStyleSheet("""
+            QLabel {
+                padding: 6px 10px;
+                background-color: white;
+                border: 1px solid #DEDEDE;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #E95420;
+                font-weight: bold;
+                text-align: center;
+            }
+        """)
+        compute_layout.addWidget(self.type_indicator)
+        
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setMaximumHeight(20)
@@ -276,20 +359,65 @@ class SpectrogramPanel(QWidget):
         
         scroll.setWidget(content)
         main_layout.addWidget(scroll)
+    
+    def on_type_changed(self, button):
+        """Handle recording type change"""
+        if button == self.canope_radio:
+            self.recording_type = "canopé"
+            self.type_indicator.setText("Type: Canopé (Channel 1)")
+            self.type_indicator.setStyleSheet("""
+                QLabel {
+                    padding: 6px 10px;
+                    background-color: white;
+                    border: 1px solid #DEDEDE;
+                    border-radius: 3px;
+                    font-size: 11px;
+                    color: #E95420;
+                    font-weight: bold;
+                    text-align: center;
+                }
+            """)
+        else:
+            self.recording_type = "ground"
+            self.type_indicator.setText("Type: Ground (Channel 0)")
+            self.type_indicator.setStyleSheet("""
+                QLabel {
+                    padding: 6px 10px;
+                    background-color: white;
+                    border: 1px solid #DEDEDE;
+                    border-radius: 3px;
+                    font-size: 11px;
+                    color: #2E8B57;
+                    font-weight: bold;
+                    text-align: center;
+                }
+            """)
+        
+        # Update status
+        if self.current_file:
+            self._update_status_text()
         
     def set_file(self, file_path, time_range, source_type='local'):
         """Set file with source type (database or local)"""
         self.current_file = file_path
         self.current_time_range = time_range
-        self.source_type = source_type  # Store source type
+        self.source_type = source_type
         self.compute_btn.setEnabled(True)
+        self._update_status_text()
         
-        if source_type == 'database':
-            self.status_label.setText("Ready to compute (Database file)")
+    def _update_status_text(self):
+        """Update status label with current file and type info"""
+        if isinstance(self.current_file, list):
+            file_text = f"{len(self.current_file)} files"
         else:
-            self.status_label.setText("Ready to compute (Local file)")
+            file_text = "file"
+        
+        # Show source type in status
+        source_text = "Database" if self.source_type == "database" else "Local"
+        self.status_label.setText(f"Ready to compute {file_text} ({self.recording_type}, {source_text})")
         
     def compute_spectrogram(self):
+        """Compute spectrogram using unified processor for all cases"""
         if not self.current_file:
             self.status_label.setText("No file selected")
             return
@@ -297,35 +425,26 @@ class SpectrogramPanel(QWidget):
         n_fft = int(self.fft_combo.currentText())
         hop_length = int(self.hop_combo.currentText())
         
-        # Check if it's a list (multiple files)
+        # Update status
         if isinstance(self.current_file, list):
-            self.compute_multiple_files(n_fft, hop_length)
+            file_count = len(self.current_file)
+            self.status_label.setText(f"Computing {file_count} files ({self.recording_type})...")
         else:
-            self.compute_single_file(n_fft, hop_length)
-
-    def compute_multiple_files(self, n_fft, hop_length):
-        """Multiple file computation - NO DOWNLOAD"""
+            self.status_label.setText(f"Computing... ({self.recording_type})")
+        
+        # Show progress bar
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
         self.compute_btn.setEnabled(False)
-        self.status_label.setText(f"Computing {len(self.current_file)} files...")
         
-        self.processor = MultiFileAudioProcessor(
-            self.current_file, n_fft, hop_length, self.current_time_range
-        )
-        self.processor.progress.connect(self.on_progress)
-        self.processor.finished.connect(self.on_finished)
-        self.processor.start()
-
-    def compute_single_file(self, n_fft, hop_length):
-        """Single file computation - NO DOWNLOAD"""
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-        self.compute_btn.setEnabled(False)
-        self.status_label.setText("Computing...")
-        
+        # USE SINGLE UNIFIED PROCESSOR FOR ALL CASES
         self.processor = AudioProcessor(
-            self.current_file, n_fft, hop_length, self.current_time_range
+            self.current_file,          # Can be string or list
+            n_fft, 
+            hop_length, 
+            self.current_time_range, 
+            self.recording_type,       # "canopé" or "ground"
+            self.source_type           # "database" or "local"
         )
         self.processor.progress.connect(self.on_progress)
         self.processor.finished.connect(self.on_finished)
@@ -341,34 +460,36 @@ class SpectrogramPanel(QWidget):
         if result:
             max_freq = result['frequencies'][-1]
             time_duration = result['times'][-1]
+            recording_type = result.get('recording_type', self.recording_type)
+            source_type = result.get('source_type', self.source_type)
             
             # Check if this is multi-file result
             file_count = result.get('file_count', 1)
             
             if file_count > 1:
                 self.results_label.setText(
-                    f"Success ({file_count} files)<br>"
+                    f"Success ({file_count} files, {recording_type}, {source_type})<br>"
                     f"<b>Total Duration:</b> {time_duration:.2f}s<br>"
                     f"<b>Max Freq:</b> {max_freq:.0f} Hz<br>"
                     f"<b>Time Frames:</b> {len(result['times'])}<br>"
                     f"<b>Freq Bins:</b> {len(result['frequencies'])}<br>"
                     f"<b>Avg per file:</b> {time_duration/file_count:.1f}s"
                 )
-                self.status_label.setText(f"{file_count} files concatenated!")
+                self.status_label.setText(f"{file_count} files concatenated! ({recording_type})")
             else:
                 self.results_label.setText(
-                    f"Success<br>"
+                    f"Success ({recording_type}, {source_type})<br>"
                     f"<b>Duration:</b> {time_duration:.2f}s<br>"
                     f"<b>Max Freq:</b> {max_freq:.0f} Hz<br>"
                     f"<b>Time Frames:</b> {len(result['times'])}<br>"
                     f"<b>Freq Bins:</b> {len(result['frequencies'])}"
                 )
-                self.status_label.setText("Done!")
+                self.status_label.setText(f"Done! ({recording_type})")
             
             self.spectrogram_computed.emit(result)
         else:
             self.results_label.setText("Error")
-            self.status_label.setText("Failed")
+            self.status_label.setText(f"Failed ({self.recording_type})")
             
     def download_s3_file(self, s3_uri):
         """Download file from S3 to local cache"""

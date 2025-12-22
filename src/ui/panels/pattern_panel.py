@@ -456,9 +456,9 @@ class PatternPanel(QWidget):
         
         duration = len(audio) / meta.get('sample_rate', 22050)
         self.selection_status.setText(
-            f"✅ Selection extracted successfully!\n"
-            f"<b>Duration:</b> {duration:.2f} seconds\n"
-            f"<b>Samples:</b> {len(audio):,}\n"
+            f"Selection extracted successfully!\n"
+            f"Duration: {duration:.2f} seconds\n"
+            f"Samples: {len(audio):,}\n"
             f"Ready to play or save"
         )
         

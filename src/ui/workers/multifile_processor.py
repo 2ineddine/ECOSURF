@@ -1,4 +1,3 @@
-# File: ui/workers/multifile_processor.py
 import numpy as np
 import librosa
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -8,30 +7,23 @@ class MultiFileAudioProcessor(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(object)
     
-    def __init__(self, file_list, n_fft, hop_length, time_range):
+    def __init__(self, file_list, n_fft, hop_length, time_range, recording_type="canopé"):
         super().__init__()
         self.file_list = file_list  # List of file paths
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.time_range = time_range  # For each file
-    
-    # File: ui/workers/multifile_processor.py
-# REPLACE the run() method with this:
-
-    # File: ui/workers/multifile_processor.py  
-# REPLACE the entire run() method with this:
+        self.recording_type = recording_type  # "canopé" or "ground"
 
     def run(self):
-        """Main computation thread - STREAMS FROM S3"""
-        print(f"=== DEBUG: Starting processor ===")
-        print(f"File(s) to process: {self.file_list}")  # FIX: self.file_list, not self.file_path
+        """Main computation thread - STREAMS FROM S3 with stereo channel handling"""
+        print(f"=== DEBUG: Starting multi-file processor ===")
+        print(f"Files to process: {len(self.file_list)}")
+        print(f"Recording type: {self.recording_type}")
         
-        if isinstance(self.file_list, list):
-            print(f"Total files in list: {len(self.file_list)}")
-            for i, fp in enumerate(self.file_list):
-                print(f"  [{i}] {fp}")
-                if not fp or not fp.startswith('s3://'):
-                    print(f"  WARNING: Invalid path at index {i}: '{fp}'")
+        for i, fp in enumerate(self.file_list):
+            print(f"  [{i}] {fp}")
+
         try:
             # --- PREPARE S3 CLIENT (ONCE) ---
             import json, os, boto3, io
@@ -89,29 +81,52 @@ class MultiFileAudioProcessor(QThread):
                         response = s3.get_object(Bucket=bucket_name, Key=s3_path)
                         audio_bytes = response['Body'].read()
                         
-                        # 3. LOAD FROM BYTES
-                        audio, sr = librosa.load(
-                            io.BytesIO(audio_bytes),
-                            offset=self.time_range[0],
-                            duration=self.time_range[1]-self.time_range[0],
-                            sr=None
-                        )
+                        # 3. LOAD FROM BYTES (STEREO)
+                        if self.time_range:
+                            audio, sr = librosa.load(
+                                io.BytesIO(audio_bytes),
+                                offset=self.time_range[0],
+                                duration=self.time_range[1]-self.time_range[0],
+                                sr=None,
+                                mono=False  # Load as stereo
+                            )
+                        else:
+                            audio, sr = librosa.load(
+                                io.BytesIO(audio_bytes),
+                                sr=None,
+                                mono=False  # Load as stereo
+                            )
                     except Exception as e:
                         print(f"Failed to load {file_path}: {e}")
                         continue
                         
                 else:
-                    # LOCAL FILE
-                    audio, sr = librosa.load(
-                        file_path,
-                        offset=self.time_range[0],
-                        duration=self.time_range[1]-self.time_range[0]
-                    )
+                    # LOCAL FILE - load stereo
+                    if self.time_range:
+                        audio, sr = librosa.load(
+                            file_path,
+                            offset=self.time_range[0],
+                            duration=self.time_range[1]-self.time_range[0],
+                            mono=False  # Load as stereo
+                        )
+                    else:
+                        audio, sr = librosa.load(
+                            file_path,
+                            mono=False  # Load as stereo
+                        )
                 
                 if audio is None or len(audio) == 0:
                     continue
                 
-                # --- COMPUTE SPECTROGRAM (EXISTING CODE) ---
+                # --- SELECT CHANNEL BASED ON RECORDING TYPE ---
+                if audio.ndim == 2:  # Stereo audio
+                    if self.recording_type == "ground":
+                        audio = audio[0, :]  # Channel 0 = Ground
+                    else:  # "canopé" or default
+                        audio = audio[1, :]  # Channel 1 = Canopé
+                # If mono, use as-is
+                
+                # --- COMPUTE SPECTROGRAM ---
                 stft = librosa.stft(audio, n_fft=self.n_fft, hop_length=self.hop_length)
                 spectrogram = librosa.amplitude_to_db(np.abs(stft), ref=np.max)
                 
@@ -154,7 +169,8 @@ class MultiFileAudioProcessor(QThread):
                 'audio': combined_audio,
                 'time_offset': 0.0,
                 'file_count': len(all_spectrograms),
-                'total_duration': total_duration
+                'total_duration': total_duration,
+                'recording_type': self.recording_type
             }
             
             self.finished.emit(result)
