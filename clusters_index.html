@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyse DINO - Vue d'ensemble</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 40px; 
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 { 
+            color: #333; 
+            text-align: center; 
+            margin-bottom: 40px;
+            font-size: 2.5em;
+        }
+        .clusters-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .cluster-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 25px;
+            border-radius: 10px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        .cluster-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+        }
+        .cluster-number {
+            font-size: 3em;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .cluster-count {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .cluster-label {
+            color: #666;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 Analyse des Clusters DINO</h1>
+        <div class="clusters-grid">
+
+            <a href="cluster_0.html" class="cluster-card">
+                <div class="cluster-number">0</div>
+                <div class="cluster-count">221</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+            <a href="cluster_1.html" class="cluster-card">
+                <div class="cluster-number">1</div>
+                <div class="cluster-count">973</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+            <a href="cluster_2.html" class="cluster-card">
+                <div class="cluster-number">2</div>
+                <div class="cluster-count">964</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+            <a href="cluster_3.html" class="cluster-card">
+                <div class="cluster-number">3</div>
+                <div class="cluster-count">585</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+            <a href="cluster_4.html" class="cluster-card">
+                <div class="cluster-number">4</div>
+                <div class="cluster-count">145</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+            <a href="cluster_5.html" class="cluster-card">
+                <div class="cluster-number">5</div>
+                <div class="cluster-count">255</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+            <a href="cluster_6.html" class="cluster-card">
+                <div class="cluster-number">6</div>
+                <div class="cluster-count">1400</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+            <a href="cluster_7.html" class="cluster-card">
+                <div class="cluster-number">7</div>
+                <div class="cluster-count">714</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+            <a href="cluster_8.html" class="cluster-card">
+                <div class="cluster-number">8</div>
+                <div class="cluster-count">357</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+            <a href="cluster_9.html" class="cluster-card">
+                <div class="cluster-number">9</div>
+                <div class="cluster-count">205</div>
+                <div class="cluster-label">spectrogrammes</div>
+            </a>
+
+        </div>
+    </div>
+</body>
+</html>
