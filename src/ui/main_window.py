@@ -21,6 +21,7 @@ from ui.panels.audio_panel import AudioPanel
 from ui.panels.pattern_panel import PatternPanel
 from ui.panels.search_panel import SearchPanel
 from ui.panels.embedding_panel import EmbeddingPanel
+from ui.panels.clustering_panel import ClusteringPanel
 from ui.components.spectrogram_widget import SpectrogramWidget
 from core.embedding_manager import EmbeddingManager
 
@@ -88,7 +89,8 @@ class MainWindow(QMainWindow):
             "Audio Playback",
             "Pattern Selection",
             "Pattern Search",
-            "Embedding Search"
+            "Embedding Search",
+            "Clustering"
         ]
         
         for feature in features:
@@ -223,6 +225,7 @@ class MainWindow(QMainWindow):
         self.pattern_panel = PatternPanel()
         self.search_panel = SearchPanel()
         self.embedding_panel = EmbeddingPanel()
+        self.clustering_panel = ClusteringPanel()
         
         self.panel_stack.addWidget(self.file_panel)
         self.panel_stack.addWidget(self.spectrogram_panel)
@@ -231,6 +234,7 @@ class MainWindow(QMainWindow):
         self.panel_stack.addWidget(self.pattern_panel)
         self.panel_stack.addWidget(self.search_panel)
         self.panel_stack.addWidget(self.embedding_panel)
+        self.panel_stack.addWidget(self.clustering_panel)
         
         bottom_layout.addWidget(self.panel_stack)
         right_layout.addWidget(self.bottom_container, stretch=1)
