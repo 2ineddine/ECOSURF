@@ -226,10 +226,10 @@ class PatternPanel(QWidget):
         operations_layout.setSpacing(10)
         
         # Extract button
-        extract_btn = QPushButton("Extract Selection")
-        extract_btn.setMinimumHeight(36)
-        extract_btn.clicked.connect(self.on_extract_selection)
-        extract_btn.setStyleSheet("""
+        self.extract_btn = QPushButton("Extract Selection")
+        self.extract_btn.setMinimumHeight(36)
+        self.extract_btn.clicked.connect(self.on_extract_selection)
+        self.extract_btn.setStyleSheet("""
             QPushButton {
                 background-color: #E95420;
                 color: white;
@@ -243,7 +243,28 @@ class PatternPanel(QWidget):
                 background-color: #D34615;
             }
         """)
-        operations_layout.addWidget(extract_btn)
+        operations_layout.addWidget(self.extract_btn)
+        
+        # Progress bar for extraction
+        from PyQt6.QtWidgets import QProgressBar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #CCCCCC;
+                border-radius: 4px;
+                text-align: center;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #E95420;
+                border-radius: 3px;
+            }
+        """)
+        operations_layout.addWidget(self.progress_bar)
         
         # Play selection button
         self.play_selection_btn = QPushButton("Play Selection")
@@ -406,7 +427,25 @@ class PatternPanel(QWidget):
         
     def on_extract_selection(self):
         """Handle extract selection button"""
+        self.show_progress(True)
         self.extract_requested.emit()
+    
+    def show_progress(self, show, value=0):
+        """Show or hide progress bar"""
+        self.progress_bar.setVisible(show)
+        self.progress_bar.setValue(value)
+        self.extract_btn.setEnabled(not show)
+    
+    def update_progress(self, value, text=None):
+        """Update progress bar value"""
+        self.progress_bar.setValue(value)
+        if text:
+            self.progress_bar.setFormat(text)
+    
+    def hide_progress(self):
+        """Hide progress bar"""
+        self.progress_bar.setVisible(False)
+        self.extract_btn.setEnabled(True)
         
     def on_play_selection(self):
         """Handle play selection button"""

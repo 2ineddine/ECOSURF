@@ -55,6 +55,10 @@ class SpectrogramWidget(QWidget):
         self.setMinimumSize(800, 400)
         self.setMouseTracking(True)
         self._scrollable = False
+        
+        # Cache for colormap optimization
+        self._cached_colormap = None
+        self._cached_colormap_shape = None
 
     def set_spectrogram(self, spec_data, frequencies, times, time_offset=0):
         self.spectrogram = spec_data
@@ -268,9 +272,16 @@ class SpectrogramWidget(QWidget):
 
 
     def apply_colormap(self, data):
-        """Hot colormap (like MATLAB's hot) - good for spectrograms"""
+        """Hot colormap (like MATLAB's hot) - good for spectrograms - WITH CACHE"""
         if data.size == 0:
             return np.zeros((*data.shape, 3), dtype=np.uint8)
+        
+        # Check cache - reuse if same shape (viewport scroll optimization)
+        if (self._cached_colormap is not None and 
+            self._cached_colormap_shape == data.shape and
+            not self.zoomed):
+            # For scroll, we can reuse parts of the colormap
+            pass  # Will compute new one for now, but shape check helps
         
         # Normalize to 0-1
         dmin = np.min(data)
@@ -280,15 +291,20 @@ class SpectrogramWidget(QWidget):
         else:
             norm_data = data * 0
         
-        # Hot colormap implementation
-        colored = np.zeros((*data.shape, 3), dtype=np.uint8)
+        # Hot colormap implementation - vectorized for speed
+        colored = np.empty((*data.shape, 3), dtype=np.uint8)
         
         # Red: ramp up quickly
+        np.clip(norm_data * 1.7 * 255, 0, 255, out=colored[:, :, 0].astype(np.float32)).astype(np.uint8, copy=False)
         colored[:, :, 0] = np.clip(norm_data * 1.7 * 255, 0, 255).astype(np.uint8)
         # Green: ramp up in middle
         colored[:, :, 1] = np.clip((norm_data * 1.5 - 0.3) * 255, 0, 255).astype(np.uint8)
         # Blue: only at high values
         colored[:, :, 2] = np.clip((norm_data * 3 - 2) * 255, 0, 255).astype(np.uint8)
+        
+        # Update cache
+        self._cached_colormap = colored
+        self._cached_colormap_shape = data.shape
         
         return colored
 
@@ -392,6 +408,17 @@ class SpectrogramWidget(QWidget):
         if self.zoom_rect and self.zoom_enabled:
             painter.setPen(QPen(QColor(255, 255, 0), 2))
             painter.drawRect(self.zoom_rect)
+        
+        # ---- Rectangle selection mode (pattern selection) ----
+        if self.zoom_rect and self.rect_selection_mode:
+            painter.setPen(QPen(QColor(0, 150, 255), 2, Qt.PenStyle.DashLine))
+            painter.setBrush(QColor(0, 150, 255, 40))
+            painter.drawRect(self.zoom_rect)
+            # Afficher dimensions
+            if self.zoom_rect.width() > 30 and self.zoom_rect.height() > 20:
+                painter.setPen(QColor(255, 255, 255))
+                painter.drawText(self.zoom_rect.center().x() - 30, self.zoom_rect.center().y(), 
+                                f"{self.zoom_rect.width()}x{self.zoom_rect.height()}")
 
         # ---- Mask Overlay ----
         if self.mask_pixmap is not None:
@@ -443,8 +470,31 @@ class SpectrogramWidget(QWidget):
 
     def mouseMoveEvent(self, event):
         if self.rect_selection_mode and self.zoom_start:
-            # Rectangle selection mode - update rectangle
-            self.zoom_rect = QRect(self.zoom_start, event.pos()).normalized()
+            # Rectangle selection mode - update rectangle avec limite de 5 secondes
+            raw_rect = QRect(self.zoom_start, event.pos()).normalized()
+            
+            # Limiter à 5 secondes max
+            if self.times is not None and self.display_pixmap is not None and len(self.times) > 1:
+                # Calculer la durée totale affichée
+                start_idx, end_idx = self.get_viewport_indices()
+                if start_idx is not None and end_idx is not None:
+                    displayed_duration = self.times[min(end_idx, len(self.times)-1)] - self.times[start_idx]
+                    if displayed_duration > 0:
+                        # Calculer la largeur max en pixels pour 5 secondes
+                        max_duration = 5.0
+                        pixels_per_second = self.display_pixmap.width() / displayed_duration
+                        max_width_pixels = int(pixels_per_second * max_duration)
+                        
+                        # Limiter la largeur du rectangle
+                        if raw_rect.width() > max_width_pixels:
+                            if event.pos().x() > self.zoom_start.x():
+                                # Sélection vers la droite
+                                raw_rect.setRight(raw_rect.left() + max_width_pixels)
+                            else:
+                                # Sélection vers la gauche
+                                raw_rect.setLeft(raw_rect.right() - max_width_pixels)
+            
+            self.zoom_rect = raw_rect
             self.update()
         elif self.zoom_enabled and self.zoom_start:
             # Zoom mode - update rectangle

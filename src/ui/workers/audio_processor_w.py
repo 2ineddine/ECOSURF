@@ -5,6 +5,11 @@ import json
 import os
 import boto3
 import io
+import tempfile
+import hashlib
+
+# Cache directory for S3 downloads
+CACHE_DIR = os.path.join(tempfile.gettempdir(), "ecosurf_cache")
 
 
 def compute_spectrogram(y, sr, n_fft=2048, hop_length=None):
@@ -161,13 +166,47 @@ class AudioProcessor(QThread):
         
         return result
     
-    def _load_database_audio(self, s3_uri, s3_client):
-        """Load audio from S3 database"""
+    def _get_cache_path(self, s3_uri):
+        """Get cache file path for S3 URI"""
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        cache_key = hashlib.md5(s3_uri.encode()).hexdigest()
+        return os.path.join(CACHE_DIR, f"{cache_key}.cache")
+    
+    def _load_from_cache(self, s3_uri):
+        """Try to load audio from local cache"""
+        cache_path = self._get_cache_path(s3_uri)
+        if os.path.exists(cache_path):
+            try:
+                print(f"  [CACHE HIT] Loading from cache: {s3_uri[:50]}...")
+                return open(cache_path, 'rb').read()
+            except:
+                pass
+        return None
+    
+    def _save_to_cache(self, s3_uri, audio_bytes):
+        """Save audio bytes to local cache"""
         try:
-            # Download from S3
-            audio_bytes = self._download_from_s3(s3_uri, s3_client)
+            cache_path = self._get_cache_path(s3_uri)
+            with open(cache_path, 'wb') as f:
+                f.write(audio_bytes)
+            print(f"  [CACHE SAVE] Saved to cache")
+        except Exception as e:
+            print(f"  [CACHE ERROR] Could not save: {e}")
+    
+    def _load_database_audio(self, s3_uri, s3_client):
+        """Load audio from S3 database with local caching"""
+        try:
+            # Try cache first
+            audio_bytes = self._load_from_cache(s3_uri)
+            
+            # If not in cache, download from S3
             if audio_bytes is None:
-                return None, None
+                print(f"  [CACHE MISS] Downloading from S3...")
+                audio_bytes = self._download_from_s3(s3_uri, s3_client)
+                if audio_bytes is None:
+                    return None, None
+                # Save to cache for next time
+                self._save_to_cache(s3_uri, audio_bytes)
             
             # Load from bytes
             if self.time_range:
