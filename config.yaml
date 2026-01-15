@@ -1,0 +1,8 @@
+# General application configuration
+spectrogram:
+  n_fft: 2048
+  hop_length: 512
+  max_frequency: 20000
+
+playback:
+  normalize_peak: 0.8
