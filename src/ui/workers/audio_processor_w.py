@@ -28,6 +28,7 @@ class AudioProcessor(QThread):
     """Universal audio processor with separate methods for each mode"""
     progress = pyqtSignal(int)
     finished = pyqtSignal(object)
+    error = pyqtSignal(str)
 
     def __init__(self, file_path, n_fft=2048, hop_length=512, time_range=None, recording_type="canopé", source_type="local"):
         """
@@ -74,21 +75,32 @@ class AudioProcessor(QThread):
             print(f"Error in AudioProcessor: {e}")
             import traceback
             traceback.print_exc()
+            self.error.emit(str(e))
             self.finished.emit(None)
     
     # ==================== DATABASE (S3) METHODS ====================
     
+    def _build_s3_uri(self, filename):
+        """Build S3 URI from filename like S4A09154_20190218_163000.flac"""
+        parts = filename.split('_')
+        site = parts[0] if len(parts) >= 1 else ""
+        return f"s3://ecosurf-dataset/2019/{site}/Data/{filename}"
+
     def _process_database_single(self):
         """Process single file from database (S3)"""
         print(f"Processing single database file: {self.file_path}")
-        
+
         # Get S3 client
         s3_client = self._get_s3_client()
         if s3_client is None:
             return None
-        
+
+        # Build S3 URI from filename
+        s3_uri = self._build_s3_uri(self.file_path)
+        print(f"  S3 URI: {s3_uri}")
+
         # Load audio from S3
-        audio, sr = self._load_database_audio(self.file_path, s3_client)
+        audio, sr = self._load_database_audio(s3_uri, s3_client)
         if audio is None:
             return None
         
@@ -106,24 +118,27 @@ class AudioProcessor(QThread):
     def _process_database_multifile(self):
         """Process multiple files from database (S3)"""
         print(f"Processing {len(self.file_path)} database files")
-        
+
         # Get S3 client
         s3_client = self._get_s3_client()
         if s3_client is None:
             return None
-        
+
         all_spectrograms = []
         all_frequencies = None
         all_times = []
         all_audio = []
         current_time_offset = 0.0
-        
+
         # Process each file
         for i, file_path in enumerate(self.file_path):
             print(f"  Processing database file {i+1}/{len(self.file_path)}: {file_path}")
-            
+
+            # Build S3 URI from filename
+            s3_uri = self._build_s3_uri(file_path)
+
             # Load audio from S3
-            audio, sr = self._load_database_audio(file_path, s3_client)
+            audio, sr = self._load_database_audio(s3_uri, s3_client)
             if audio is None:
                 continue
             
