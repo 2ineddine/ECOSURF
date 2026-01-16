@@ -1,6 +1,3 @@
-"""
-Main Window - Professional Modular Architecture
-"""
 import os
 import threading
 from datetime import datetime
@@ -8,12 +5,14 @@ from datetime import datetime
 import numpy as np
 import librosa
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QListWidget, QStackedWidget, QSplitter, QScrollBar, QPushButton
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFrame,
+    QListWidget, QStackedWidget, QScrollBar, QPushButton,
+    QLabel, QListWidgetItem, QTabWidget
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QIcon
 
+from ui.styles import GLOBAL_STYLE, SIDEBAR_STYLE, HEADER_STYLE, INSPECTOR_STYLE
 from ui.panels.panels_file import FilePanel
 from ui.panels.spectrogram_panel import SpectrogramPanel
 from ui.panels.view_panel import ViewPanel
@@ -23,201 +22,279 @@ from ui.panels.search_panel import SearchPanel
 from ui.panels.embedding_panel import EmbeddingPanel
 from ui.panels.clustering_panel import ClusteringPanel
 from ui.components.spectrogram_widget import SpectrogramWidget
+from ui.dialogs.clustering_dialog import ClusteringDialog
 from core.embedding_manager import EmbeddingManager
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Jungle Audio Pattern Search Tool")
-        self.setGeometry(0, 0, 1600, 900)
+        self.setWindowTitle("ECOSURF - Bioacoustic Analysis")
+        self.setGeometry(50, 50, 1600, 900)
+        self.setStyleSheet(GLOBAL_STYLE)
         
         self.current_file = None
         self.current_time_range = None
         self.audio_data = None
         self.file_list = []
-        self.bottom_mini_toggle = None
         self.audio_thread = None
         self.playing = False
         self.playing_selection = False
         self.playback_timer = QTimer()
         self.playback_timer.timeout.connect(self.update_playback_position)
         self.playback_start_time = 0
-        self.left_panel_visible = True
-        self.bottom_panel_visible = True
-        self.previous_right_size = 0
-        self.previous_left_size = 220   
-        self.bottom_container = None
-        self.right_panel_height = 1380
         self.search_results = []
         self.embedding_manager = EmbeddingManager()
-        
-        # Perch model - lazy loading (sera charge au premier besoin)
         self.perch_model = None
         self.perch_model_loading = False
+        self.clustering_dialog = None
         
         self.init_ui()
         self.connect_signals()
-        
-        # NOTE: Embeddings NOT auto-loaded - user clicks "Charger Embeddings" when ready
-        
+
     def init_ui(self):
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        main_layout = QHBoxLayout(central_widget)
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+
+        self.header = self.create_header()
+        main_layout.addWidget(self.header)
+
+        body = QWidget()
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+
+        self.sidebar = self.create_sidebar()
+        body_layout.addWidget(self.sidebar)
+
+        self.workspace = self.create_workspace()
+        body_layout.addWidget(self.workspace, stretch=1)
+
+        self.inspector = self.create_inspector()
+        body_layout.addWidget(self.inspector)
+
+        main_layout.addWidget(body, stretch=1)
+
+    def create_header(self):
+        header = QFrame()
+        header.setObjectName("header")
+        header.setFixedHeight(40)
+        header.setStyleSheet(HEADER_STYLE)
         
-        left_container = QWidget()
-        left_layout = QHBoxLayout(left_container)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(0)
-        
-        self.feature_list = QListWidget()
-        self.feature_list.setMaximumWidth(220)
-        self.feature_list.setMinimumWidth(220)
-        self.feature_list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.feature_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self.feature_list.setSelectionBehavior(QListWidget.SelectionBehavior.SelectRows)
-        self.feature_list.setSpacing(2)
-        
-        features = [
-            "File Management",
-            "Spectrogram",
-            "View Controls",
-            "Audio Playback",
-            "Pattern Selection",
-            "Pattern Search",
-            "Embedding Search",
-            "Clustering"
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(16, 0, 16, 0)
+        layout.setSpacing(12)
+
+        logo = QLabel("ECOSURF")
+        logo.setObjectName("header_text")
+        logo.setStyleSheet("font-weight: bold; font-size: 14px; color: #ECF0F1;")
+        layout.addWidget(logo)
+
+        sep1 = QLabel("|")
+        sep1.setStyleSheet("color: rgba(255,255,255,0.3);")
+        layout.addWidget(sep1)
+
+        self.header_file = QLabel("No file loaded")
+        self.header_file.setObjectName("header_file")
+        self.header_file.setStyleSheet("color: #BDC3C7; font-size: 11px;")
+        layout.addWidget(self.header_file)
+
+        layout.addStretch()
+
+        self.header_status = QLabel("")
+        self.header_status.setStyleSheet("color: #27AE60; font-size: 11px;")
+        layout.addWidget(self.header_status)
+
+        return header
+
+    def create_sidebar(self):
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(180)
+        sidebar.setStyleSheet(SIDEBAR_STYLE)
+
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        logo_label = QLabel("ECOSURF")
+        logo_label.setObjectName("logo")
+        layout.addWidget(logo_label)
+
+        version = QLabel("v1.0 - Bioacoustic")
+        version.setObjectName("version")
+        layout.addWidget(version)
+
+        self.nav_list = QListWidget()
+        self.nav_list.setObjectName("nav")
+
+        nav_items = [
+            ("Files", 0),
+            ("Spectrogram", 1),
+            ("View", 2),
+            ("Audio", 3),
+            ("Selection", 4),
+            ("Pattern Search", 5),
+            ("Embedding", 6),
+            ("2D Clustering", 7),
         ]
-        
-        for feature in features:
-            self.feature_list.addItem(feature)
-        
-        self.feature_list.setStyleSheet("""
-            QListWidget {
-                background-color: #FAFAFA;
-                border: none;
-                border-right: 1px solid #DEDEDE;
-                font-size: 13px;
-                padding: 5px;
-                outline: none;
-            }
-            QListWidget::item {
-                padding: 10px 12px;
-                margin: 2px 5px;
-                color: #333333;
-                border-radius: 3px;
-                border: 1px solid transparent;
-            }
-            QListWidget::item:selected {
-                background-color: #E95420;
-                color: white;
-                font-weight: bold;
-                border: 1px solid #E95420;
-            }
-            QListWidget::item:hover:!selected {
-                background-color: #F2F2F2;
-            }
+
+        for name, idx in nav_items:
+            item = QListWidgetItem(name)
+            item.setData(Qt.ItemDataRole.UserRole, idx)
+            self.nav_list.addItem(item)
+
+        self.nav_list.setCurrentRow(0)
+        self.nav_list.currentRowChanged.connect(self.on_nav_changed)
+        layout.addWidget(self.nav_list, stretch=1)
+
+        layout.addStretch()
+
+        return sidebar
+
+    def create_workspace(self):
+        workspace = QWidget()
+        workspace.setStyleSheet("background: #F5F6F7;")
+        layout = QVBoxLayout(workspace)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #E0E0E0; background: white; border-radius: 4px; }
+            QTabBar::tab { background: #ECF0F1; border: 1px solid #E0E0E0; padding: 8px 20px; margin-right: 2px; }
+            QTabBar::tab:selected { background: white; border-bottom: 1px solid white; font-weight: bold; }
+            QTabBar::tab:hover:!selected { background: #D5DBDB; }
         """)
-        
-        self.feature_list.currentRowChanged.connect(self.on_feature_changed)
-        
-        self.left_toggle_btn = QPushButton("◀")
-        self.left_toggle_btn.setMaximumWidth(20)
-        self.left_toggle_btn.setMinimumHeight(100)
-        self.left_toggle_btn.clicked.connect(self.toggle_left_panel)
-        self.left_toggle_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #F2F2F2;
-                color: #333333;
-                font-weight: bold;
-                border: none;
-                font-size: 14px;
-                border-left: 1px solid #DEDEDE;
-            }
-            QPushButton:hover {
-                background-color: #E5E5E5;
-            }
-        """)
-        
-        left_layout.addWidget(self.feature_list)
-        left_layout.addWidget(self.left_toggle_btn)
-        
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
-        
-        spectrogram_container = QWidget()
-        spectrogram_layout = QVBoxLayout(spectrogram_container)
-        spectrogram_layout.setContentsMargins(10, 10, 10, 10)
-        spectrogram_layout.setSpacing(0)
-        
+
+        spectro_tab = QWidget()
+        spectro_layout = QVBoxLayout(spectro_tab)
+        spectro_layout.setContentsMargins(8, 8, 8, 8)
         self.spectrogram_widget = SpectrogramWidget()
-        spectrogram_layout.addWidget(self.spectrogram_widget)
-        
-        right_layout.addWidget(spectrogram_container, stretch=3)
-        
-        self.bottom_toggle_btn = QPushButton("▼")
-        self.bottom_toggle_btn.setMaximumHeight(25)
-        self.bottom_toggle_btn.clicked.connect(self.toggle_bottom_panel)
-        self.bottom_toggle_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #F2F2F2;
-                color: #333333;
-                font-weight: bold;
-                border: none;
-                font-size: 11px;
-                border-top: 1px solid #DEDEDE;
-                border-bottom: 1px solid #DEDEDE;
-                padding: 4px;
-            }
-            QPushButton:hover {
-                background-color: #E5E5E5;
-            }
-        """)
-        right_layout.addWidget(self.bottom_toggle_btn)
-        
+        spectro_layout.addWidget(self.spectrogram_widget)
+
         self.viewport_scroll = QScrollBar(Qt.Orientation.Horizontal)
         self.viewport_scroll.setMinimum(0)
         self.viewport_scroll.setMaximum(100)
         self.viewport_scroll.setValue(0)
         self.viewport_scroll.setEnabled(False)
         self.viewport_scroll.valueChanged.connect(self.on_viewport_scroll)
-        self.viewport_scroll.setStyleSheet("""
-            QScrollBar:horizontal {
-                border: 1px solid #DEDEDE;
-                background: #FAFAFA;
-                height: 12px;
-                margin: 0px;
-                border-top: 1px solid #DEDEDE;
-            }
-            QScrollBar::handle:horizontal {
-                background: #CCCCCC;
-                min-width: 20px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:horizontal:hover {
-                background: #AAAAAA;
-            }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                width: 0px;
-            }
-        """)
-        right_layout.addWidget(self.viewport_scroll)
+        self.viewport_scroll.setFixedHeight(14)
+        spectro_layout.addWidget(self.viewport_scroll)
+
+        self.tabs.addTab(spectro_tab, "Spectrogram")
+
+        cluster_tab = QWidget()
+        cluster_layout = QVBoxLayout(cluster_tab)
+        cluster_layout.setContentsMargins(20, 20, 20, 20)
+
+        info_label = QLabel("2D Clustering Visualization")
+        info_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #2C3E50;")
+        cluster_layout.addWidget(info_label)
+
+        desc = QLabel("Explore 650,760 audio segments projected in 2D space using UMAP.\nClick below to open the interactive visualization.")
+        desc.setStyleSheet("color: #7F8C8D; font-size: 12px;")
+        cluster_layout.addWidget(desc)
+
+        cluster_layout.addSpacing(20)
+
+        open_btn = QPushButton("Open 2D Clustering")
+        open_btn.setFixedSize(200, 40)
+        open_btn.setProperty("primary", True)
+        open_btn.clicked.connect(self.open_clustering_dialog)
+        cluster_layout.addWidget(open_btn)
+
+        cluster_layout.addStretch()
+
+        stats_frame = QFrame()
+        stats_frame.setStyleSheet("background: white; border: 1px solid #E0E0E0; border-radius: 4px; padding: 12px;")
+        stats_layout = QVBoxLayout(stats_frame)
+        stats_layout.addWidget(QLabel("Dataset Statistics:"))
+        stats_layout.addWidget(QLabel("Total segments: 650,760"))
+        stats_layout.addWidget(QLabel("Clusters: 488"))
+        stats_layout.addWidget(QLabel("Embedding dim: 1536"))
+        stats_layout.addWidget(QLabel("Segment duration: 5s"))
+        cluster_layout.addWidget(stats_frame)
+
+        cluster_layout.addStretch()
+
+        self.tabs.addTab(cluster_tab, "2D Clustering")
+
+        layout.addWidget(self.tabs, stretch=1)
+
+        toolbar = self.create_toolbar()
+        layout.addWidget(toolbar)
+
+        return workspace
+
+    def create_toolbar(self):
+        toolbar = QFrame()
+        toolbar.setFixedHeight(40)
+        toolbar.setStyleSheet("background: white; border: 1px solid #E0E0E0; border-radius: 4px;")
         
-        self.bottom_container = QWidget()
-        self.bottom_container.setMinimumHeight(400)
-        self.bottom_container.setStyleSheet("background-color: #FAFAFA; border-top: 1px solid #DEDEDE;")
-        bottom_layout = QVBoxLayout(self.bottom_container)
-        bottom_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_layout.setSpacing(0)
-        
+        layout = QHBoxLayout(toolbar)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(4)
+
+        self.play_btn = QPushButton("Play")
+        self.play_btn.setFixedSize(60, 28)
+        self.play_btn.setProperty("success", True)
+        self.play_btn.clicked.connect(self.play_audio)
+        layout.addWidget(self.play_btn)
+
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setFixedSize(50, 28)
+        self.stop_btn.clicked.connect(self.stop_audio)
+        layout.addWidget(self.stop_btn)
+
+        layout.addSpacing(16)
+
+        sep = QFrame()
+        sep.setFixedWidth(1)
+        sep.setStyleSheet("background: #E0E0E0;")
+        layout.addWidget(sep)
+
+        layout.addSpacing(16)
+
+        zoom_in = QPushButton("+")
+        zoom_in.setFixedSize(28, 28)
+        zoom_in.setToolTip("Zoom In")
+        layout.addWidget(zoom_in)
+
+        zoom_out = QPushButton("-")
+        zoom_out.setFixedSize(28, 28)
+        zoom_out.setToolTip("Zoom Out")
+        layout.addWidget(zoom_out)
+
+        zoom_reset = QPushButton("Reset")
+        zoom_reset.setFixedSize(50, 28)
+        zoom_reset.clicked.connect(self.on_zoom_reset)
+        layout.addWidget(zoom_reset)
+
+        layout.addStretch()
+
+        self.toolbar_status = QLabel("")
+        self.toolbar_status.setStyleSheet("color: #7F8C8D; font-size: 11px;")
+        layout.addWidget(self.toolbar_status)
+
+        return toolbar
+
+    def create_inspector(self):
+        inspector = QFrame()
+        inspector.setObjectName("inspector")
+        inspector.setFixedWidth(280)
+        inspector.setStyleSheet(INSPECTOR_STYLE)
+
+        scroll_content = QWidget()
+        self.inspector_layout = QVBoxLayout(scroll_content)
+        self.inspector_layout.setContentsMargins(12, 12, 12, 12)
+        self.inspector_layout.setSpacing(8)
+
         self.panel_stack = QStackedWidget()
-        
+
         self.file_panel = FilePanel()
         self.spectrogram_panel = SpectrogramPanel()
         self.view_panel = ViewPanel()
@@ -226,7 +303,7 @@ class MainWindow(QMainWindow):
         self.search_panel = SearchPanel()
         self.embedding_panel = EmbeddingPanel()
         self.clustering_panel = ClusteringPanel()
-        
+
         self.panel_stack.addWidget(self.file_panel)
         self.panel_stack.addWidget(self.spectrogram_panel)
         self.panel_stack.addWidget(self.view_panel)
@@ -235,76 +312,29 @@ class MainWindow(QMainWindow):
         self.panel_stack.addWidget(self.search_panel)
         self.panel_stack.addWidget(self.embedding_panel)
         self.panel_stack.addWidget(self.clustering_panel)
-        
-        bottom_layout.addWidget(self.panel_stack)
-        right_layout.addWidget(self.bottom_container, stretch=1)
-        
-        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.main_splitter.addWidget(left_container)
-        self.main_splitter.addWidget(right_widget)
-        self.main_splitter.setSizes([220, 1200])
-        self.main_splitter.setStretchFactor(1, 1)
-        
-        main_layout.addWidget(self.main_splitter)
-        self.feature_list.setCurrentRow(0)
 
-    def toggle_left_panel(self):
-        if self.left_panel_visible:
-            self.feature_list.hide()
-            self.feature_list.setMaximumWidth(0)
-            self.feature_list.setMinimumWidth(0)
-            self.left_toggle_btn.setText("▶")
-            self.left_panel_visible = False
-            current_sizes = self.main_splitter.sizes()
-            if self.bottom_panel_visible:
-                self.main_splitter.setSizes([20, current_sizes[1] + 200])
-            else:
-                self.main_splitter.setSizes([20, current_sizes[1] + 220])
-        else:
-            self.feature_list.show()
-            self.feature_list.setMaximumWidth(220)
-            self.feature_list.setMinimumWidth(220)
-            self.left_toggle_btn.setText("◀")
-            self.left_panel_visible = True
-            if self.bottom_panel_visible:
-                self.main_splitter.setSizes([220, 1180])
-            else:
-                self.main_splitter.setSizes([220, 1360])
+        self.inspector_layout.addWidget(self.panel_stack)
+        self.inspector_layout.addStretch()
 
-    def toggle_bottom_panel(self):
-        if self.bottom_panel_visible:
-            self.panel_stack.hide()
-            self.previous_right_size = self.main_splitter.sizes()[1]
-            self.bottom_container.hide()
-            self.bottom_toggle_btn.setText("▲")
-            self.bottom_panel_visible = False
-            if self.left_panel_visible:
-                self.main_splitter.setSizes([220, self.previous_right_size + 600])
-            else:
-                self.main_splitter.setSizes([20, self.previous_right_size + 800])
-            self.setWindowTitle("Jungle Audio Pattern Search (Controls hidden)")
-        else:
-            self.bottom_container.show()
-            self.panel_stack.show()
-            self.bottom_toggle_btn.setText("▼")
-            self.bottom_panel_visible = True
-            if self.left_panel_visible:
-                self.main_splitter.setSizes([220, 500])
-            else:
-                self.main_splitter.setSizes([20, 1360])
-            self.setWindowTitle("Jungle Audio Pattern Search")
+        main_layout = QVBoxLayout(inspector)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll_content)
 
-    def on_period_dict_loaded(self, period_dict):
-        if hasattr(self, 'search_panel'):
-            self.search_panel.set_period_dict(period_dict)
+        return inspector
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.bottom_mini_toggle is not None and self.bottom_mini_toggle.isVisible():
-            left_panel_width = 220 if self.left_panel_visible else 20
-            right_panel_width = self.width() - left_panel_width
-            button_x = left_panel_width + (right_panel_width - 120) // 2
-            self.bottom_mini_toggle.move(button_x, self.height() - 20)
+    def on_nav_changed(self, index):
+        if index >= 0:
+            self.panel_stack.setCurrentIndex(index)
+            if index == 7:
+                self.tabs.setCurrentIndex(1)
+            else:
+                self.tabs.setCurrentIndex(0)
+
+    def open_clustering_dialog(self):
+        if self.clustering_dialog is None or not self.clustering_dialog.isVisible():
+            self.clustering_dialog = ClusteringDialog(self)
+        self.clustering_dialog.show()
+        self.clustering_dialog.raise_()
 
     def connect_signals(self):
         self.file_panel.file_loaded.connect(self.on_file_loaded_with_source)
@@ -338,22 +368,22 @@ class MainWindow(QMainWindow):
         
         try:
             self.spectrogram_widget.scrollableChanged.connect(self.viewport_scroll.setEnabled)
-        except Exception:
+        except:
             pass
-        # NOTE: extract_selection maintenant seulement sur bouton "Extract", pas en temps reel
-        # self.spectrogram_widget.selectionChanged.connect(self.extract_selection)
 
-    def on_feature_changed(self, index):
-        self.panel_stack.setCurrentIndex(index)
+    def on_period_dict_loaded(self, period_dict):
+        if hasattr(self, 'search_panel'):
+            self.search_panel.set_period_dict(period_dict)
 
     def on_file_loaded_with_source(self, file_path, time_range, source_type):
         self.current_file = file_path
         self.current_time_range = time_range
         self.spectrogram_panel.set_file(file_path, time_range, source_type)
         if isinstance(file_path, list):
-            self.file_panel.update_file_info(f"Ready to compute {len(file_path)} files ({len(file_path)*60:.0f}s total)")
+            self.header_file.setText(f"{len(file_path)} files selected")
         else:
-            self.file_panel.update_file_info(f"Ready to compute (source: {source_type})")
+            name = os.path.basename(file_path) if file_path else "No file"
+            self.header_file.setText(name[:50])
 
     def on_folder_loaded(self, file_list):
         self.file_list = file_list
@@ -362,7 +392,7 @@ class MainWindow(QMainWindow):
     def on_spectrogram_computed(self, audio_data):
         self.audio_data = audio_data
         max_freq = audio_data['frequencies'][-1]
-        self.file_panel.update_file_info(f"Max Frequency: {max_freq:.0f} Hz")
+        self.header_status.setText(f"Max: {max_freq:.0f} Hz")
         self.spectrogram_widget.set_spectrogram(
             audio_data['spectrogram'], 
             audio_data['frequencies'], 
@@ -375,6 +405,7 @@ class MainWindow(QMainWindow):
         self.viewport_scroll.setValue(0)
         self.audio_panel.enable_controls(True)
         self.search_panel.set_audio_data(audio_data)
+        self.toolbar_status.setText(f"Duration: {total_duration:.1f}s")
 
     def on_viewport_scroll(self, value):
         if self.playing:
@@ -397,8 +428,6 @@ class MainWindow(QMainWindow):
     def on_search_scope_changed(self, scope_type, file_list):
         if hasattr(self, 'search_panel') and hasattr(self.search_panel, 'set_search_scope'):
             self.search_panel.set_search_scope(scope_type, file_list)
-        scope_names = {"database": "Entire database", "current": "Current file only", "period": "Selected date range"}
-        self.statusBar().showMessage(f"Search scope: {scope_names.get(scope_type, 'Unknown')} ({len(file_list)} files)", 3000)
 
     def on_rect_mode_toggled(self, enabled):
         if enabled:
@@ -414,7 +443,7 @@ class MainWindow(QMainWindow):
     def extract_selection(self):
         try:
             from core.spectrogram_audio import extract_patch_audio
-        except Exception:
+        except:
             self.pattern_panel.hide_progress()
             return
         if self.audio_data is None:
@@ -423,58 +452,45 @@ class MainWindow(QMainWindow):
         mask = self.spectrogram_widget.mask
         if mask is None or not mask.any():
             self.pattern_panel.hide_progress()
-            self.pattern_panel.selection_status.setText("Pas de selection")
+            self.pattern_panel.selection_status.setText("No selection")
             return
-        
-        # Afficher progression
-        self.pattern_panel.update_progress(10, "Preparation...")
+        self.pattern_panel.update_progress(10, "Preparing...")
         QTimer.singleShot(50, self._do_extract_selection)
     
     def _do_extract_selection(self):
-        """Execute l'extraction ISTFT avec progression"""
         try:
             from core.spectrogram_audio import extract_patch_audio
-        except Exception:
+        except:
             self.pattern_panel.hide_progress()
             return
-            
-        self.pattern_panel.update_progress(20, "Calcul STFT...")
-        
+        self.pattern_panel.update_progress(20, "Computing STFT...")
         n_fft = int(self.spectrogram_panel.fft_combo.currentText())
         hop_length = int(self.spectrogram_panel.hop_combo.currentText())
         audio = self.audio_data.get('audio')
         sr = self.audio_data.get('sample_rate')
         mask = self.spectrogram_widget.mask
-        
         try:
             stft = librosa.stft(audio, n_fft=n_fft, hop_length=hop_length)
-        except Exception:
+        except:
             self.pattern_panel.hide_progress()
             return
-        
-        self.pattern_panel.update_progress(60, "Extraction audio (ISTFT)...")
-        
+        self.pattern_panel.update_progress(60, "Extracting audio...")
         sel_audio, meta = extract_patch_audio(
             stft, mask, sr, 
             hop_length=hop_length, 
             n_fft=n_fft, 
             time_offset=self.audio_data.get('time_offset', 0.0)
         )
-        
-        self.pattern_panel.update_progress(90, "Finalisation...")
-        
+        self.pattern_panel.update_progress(90, "Finalizing...")
         if sel_audio is None or len(sel_audio) == 0:
             self.pattern_panel.hide_progress()
-            self.pattern_panel.selection_status.setText("Extraction echouee")
+            self.pattern_panel.selection_status.setText("Extraction failed")
             return
-            
         self.pattern_panel.set_selection_audio(sel_audio, meta)
-        
         try:
             self.spectrogram_widget.show_selection_audio(sel_audio, sr)
-        except Exception:
+        except:
             pass
-        
         self.pattern_panel.hide_progress()
 
     def play_audio(self):
@@ -498,6 +514,8 @@ class MainWindow(QMainWindow):
         self.playback_timer.start(50)
         self.audio_panel.set_playing_state()
         self.viewport_scroll.setEnabled(False)
+        self.play_btn.setText("Playing...")
+        self.play_btn.setEnabled(False)
 
     def play_selection(self):
         selection_audio = self.pattern_panel.selection_audio
@@ -530,7 +548,7 @@ class MainWindow(QMainWindow):
             stream.close()
             p.terminate()
         except Exception as e:
-            print(f"Audio playback error: {e}")
+            print(f"Audio error: {e}")
         self.playing = False
 
     def pause_audio(self):
@@ -541,14 +559,10 @@ class MainWindow(QMainWindow):
         self.audio_panel.set_paused_state()
         try:
             self.viewport_scroll.setEnabled(self.spectrogram_widget._scrollable)
-        except Exception:
+        except:
             pass
-        if self.playing_selection:
-            elapsed = datetime.now().timestamp() - self.playback_start_time
-            try:
-                self.spectrogram_widget.set_selection_playback_pos(elapsed)
-            except Exception:
-                pass
+        self.play_btn.setText("Play")
+        self.play_btn.setEnabled(True)
 
     def stop_audio(self):
         self.playing = False
@@ -559,13 +573,15 @@ class MainWindow(QMainWindow):
         self.audio_panel.set_stopped_state()
         try:
             self.viewport_scroll.setEnabled(self.spectrogram_widget._scrollable)
-        except Exception:
+        except:
             pass
         try:
             self.playing_selection = False
             self.spectrogram_widget.set_selection_playback_pos(None)
-        except Exception:
+        except:
             pass
+        self.play_btn.setText("Play")
+        self.play_btn.setEnabled(True)
 
     def update_playback_position(self):
         if not self.playing:
@@ -585,224 +601,105 @@ class MainWindow(QMainWindow):
 
     def open_search_result(self, file_path):
         self.current_file = file_path
-        self.file_panel.file_label.setText(f"Opened: {os.path.basename(file_path)}")
+        self.header_file.setText(os.path.basename(file_path))
 
     def load_embeddings(self):
-        # Utiliser automatiquement les meilleurs fichiers disponibles (sample10 avec FAISS)
-        self.embedding_panel.status_label.setText("Recherche des fichiers...")
+        self.embedding_panel.status_label.setText("Searching files...")
         self.embedding_panel.load_btn.setEnabled(False)
-        
         success = self.embedding_manager.load_best_available(
             on_done=self.embedding_panel.on_embeddings_loaded,
             on_error=lambda e: (
-                self.embedding_panel.status_label.setText(f"Erreur: {e}"),
+                self.embedding_panel.status_label.setText(f"Error: {e}"),
                 self.embedding_panel.load_btn.setEnabled(True)
             ),
             on_progress=lambda msg: self.embedding_panel.status_label.setText(msg)
         )
-        
         if not success:
-            self.embedding_panel.status_label.setText("Fichiers embeddings non trouvés dans perch2/")
+            self.embedding_panel.status_label.setText("Embeddings not found in perch2/")
             self.embedding_panel.load_btn.setEnabled(True)
 
     def search_embeddings(self):
         if self.audio_data is None:
-            self.embedding_panel.status_label.setText("Pas d'audio charge")
+            self.embedding_panel.status_label.setText("No audio loaded")
             return
         if not self.embedding_manager.loaded:
-            self.embedding_panel.status_label.setText("Embeddings non charges")
+            self.embedding_panel.status_label.setText("Embeddings not loaded")
             return
-            
         mask = self.spectrogram_widget.mask
         if mask is None or not mask.any():
-            self.embedding_panel.status_label.setText("Selectionnez une zone d'abord (5s max)")
+            self.embedding_panel.status_label.setText("Select a region first (5s max)")
             return
-            
         time_cols = np.any(mask > 0, axis=0)
         if not np.any(time_cols):
             return
-            
         first = int(np.where(time_cols)[0][0])
         last = int(np.where(time_cols)[0][-1])
         times = self.audio_data['times']
-        
-        # Calculer le temps de selection
         start_time = times[first] + self.audio_data.get('time_offset', 0.0)
         end_time = times[last] + self.audio_data.get('time_offset', 0.0)
         selection_duration = end_time - start_time
-        
-        # Vérifier que la sélection ne dépasse pas 5 secondes
-        if selection_duration > 5.5:  # Petite marge
-            self.embedding_panel.status_label.setText(f"Sélection trop longue: {selection_duration:.1f}s (max 5s)")
+        if selection_duration > 5.5:
+            self.embedding_panel.status_label.setText(f"Selection too long: {selection_duration:.1f}s (max 5s)")
             return
-        
-        self.embedding_panel.status_label.setText("Extraction de l'embedding Perch...")
-        
-        # Extraire l'audio de la sélection
+        self.embedding_panel.status_label.setText("Computing Perch embedding...")
         sr = self.audio_data['sample_rate']
         audio = self.audio_data['audio']
         start_sample = int(start_time * sr)
         end_sample = int(end_time * sr)
         selection_audio = audio[start_sample:end_sample]
-        
-        # Calculer l'embedding avec Perch
         query_emb = self.compute_embedding(selection_audio, sr)
-        
         if query_emb is not None:
-            self.embedding_panel.status_label.setText("Recherche dans la base...")
+            self.embedding_panel.status_label.setText("Searching database...")
             results = self.embedding_manager.search(query_emb, top_k=20)
             self.embedding_panel.show_results(results)
             self.search_results = results
-            self.embedding_panel.status_label.setText(f"{len(results)} resultats trouves")
+            self.embedding_panel.status_label.setText(f"{len(results)} results found")
         else:
-            self.embedding_panel.status_label.setText("Segment non trouve dans la base 2019")
-
-    def find_matching_embedding(self, start_time, end_time):
-        """
-        Trouve les embeddings correspondant au segment selectionne.
-        Si la selection chevauche plusieurs segments de 5s, on fait la moyenne
-        ponderee par le chevauchement.
-        """
-        if not self.embedding_manager.loaded:
-            return None
-        
-        # Extraire le nom du fichier courant
-        current_file = self.current_file
-        if current_file is None:
-            return None
-        
-        # Extraire juste le nom de fichier (sans chemin)
-        import os
-        file_name = os.path.basename(current_file)
-        # Nettoyer le nom pour matcher (enlever extension si besoin)
-        file_base = file_name.replace('.flac', '').replace('.wav', '')
-        
-        # Chercher TOUS les segments qui chevauchent la selection
-        metadata = self.embedding_manager.metadata
-        matching_segments = []  # (index, overlap_duration, meta)
-        
-        for i, meta in enumerate(metadata):
-            meta_file = meta.get('file', '').replace('.flac', '').replace('.wav', '')
-            meta_start = meta.get('start', 0)
-            meta_end = meta.get('end', 0)
-            
-            # Verifier si le fichier correspond
-            if file_base in meta_file or meta_file in file_base:
-                # Calculer le chevauchement temporel
-                overlap_start = max(start_time, meta_start)
-                overlap_end = min(end_time, meta_end)
-                overlap = max(0, overlap_end - overlap_start)
-                
-                if overlap > 0.1:  # Au moins 0.1s de chevauchement
-                    matching_segments.append((i, overlap, meta))
-        
-        if len(matching_segments) == 0:
-            # Aucun match direct - mode demo
-            self.embedding_panel.status_label.setText("Fichier non dans base 2019 - mode demo")
-            if len(metadata) > 0:
-                import random
-                segment_idx = random.randint(0, len(metadata) - 1)
-                return self.embedding_manager.get_embedding(segment_idx)
-            return None
-        
-        # Si un seul segment, retourner directement
-        if len(matching_segments) == 1:
-            idx, overlap, meta = matching_segments[0]
-            self.embedding_panel.status_label.setText(
-                f"Segment trouve: {meta['start']:.0f}-{meta['end']:.0f}s"
-            )
-            return self.embedding_manager.get_embedding(idx)
-        
-        # Plusieurs segments - faire la moyenne ponderee par le chevauchement
-        total_overlap = sum(seg[1] for seg in matching_segments)
-        weighted_embedding = np.zeros(1536, dtype=np.float32)
-        
-        segment_info = []
-        for idx, overlap, meta in matching_segments:
-            weight = overlap / total_overlap
-            emb = self.embedding_manager.get_embedding(idx)
-            if emb is not None:
-                weighted_embedding += weight * emb
-                segment_info.append(f"{meta['start']:.0f}-{meta['end']:.0f}s")
-        
-        self.embedding_panel.status_label.setText(
-            f"{len(matching_segments)} segments combines: {', '.join(segment_info[:3])}..."
-        )
-        
-        return weighted_embedding
+            self.embedding_panel.status_label.setText("Embedding computation failed")
 
     def load_perch_model(self):
-        """
-        Charge le modèle Perch de façon lazy (au premier besoin).
-        Retourne True si le modèle est chargé, False sinon.
-        """
         if self.perch_model is not None:
             return True
-        
         if self.perch_model_loading:
             return False
-        
         try:
             self.perch_model_loading = True
-            self.embedding_panel.status_label.setText("Chargement du modèle Perch...")
-            
+            self.embedding_panel.status_label.setText("Loading Perch model...")
             from perch_hoplite.zoo import model_configs
             self.perch_model = model_configs.load_model_by_name("perch_v2")
-            
             self.perch_model_loading = False
-            self.embedding_panel.status_label.setText("Modèle Perch chargé!")
+            self.embedding_panel.status_label.setText("Perch model loaded")
             return True
-            
         except Exception as e:
             self.perch_model_loading = False
-            print(f"Erreur chargement Perch: {e}")
-            self.embedding_panel.status_label.setText(f"Erreur Perch: {str(e)[:50]}")
+            self.embedding_panel.status_label.setText(f"Perch error: {str(e)[:50]}")
             return False
 
     def compute_embedding(self, audio, sr):
-        """
-        Calcul d'embedding pour la sélection avec le modèle Perch.
-        Audio doit être 5 secondes à 32kHz (160000 samples).
-        """
         try:
-            # Charger Perch si nécessaire
             if not self.load_perch_model():
-                self.embedding_panel.status_label.setText("Modèle Perch non disponible")
                 return None
-            
-            # Resample to 32kHz if needed (Perch uses 32kHz)
             if sr != 32000:
                 audio = librosa.resample(audio, orig_sr=sr, target_sr=32000)
                 sr = 32000
-            
-            # Perch attend 5 secondes = 160000 samples
             target_length = 160000
-            
             if len(audio) < target_length:
-                # Pad avec des zéros si trop court
                 audio = np.pad(audio, (0, target_length - len(audio)), mode='constant')
             elif len(audio) > target_length:
-                # Tronquer si trop long
                 audio = audio[:target_length]
-            
-            # Assurer le bon type et shape
             audio = audio.astype(np.float32)
-            
-            # Calculer l'embedding avec Perch
             outputs = self.perch_model.embed(audio)
             embedding = outputs.embeddings.flatten()
-            
             return embedding.astype(np.float32)
-            
         except Exception as e:
-            print(f"Error computing embedding: {e}")
-            self.embedding_panel.status_label.setText(f"Erreur embedding: {str(e)[:50]}")
+            print(f"Embedding error: {e}")
             return None
 
     def on_embedding_result_selected(self, data):
         idx = data['index']
-        result = self.search_results[idx]
-        print(f"Selected: {result['metadata']}")
+        if idx < len(self.search_results):
+            result = self.search_results[idx]
+            print(f"Selected: {result['metadata']}")
 
     def keyPressEvent(self, event):
         key = event.key()
@@ -828,11 +725,5 @@ class MainWindow(QMainWindow):
             return
         if key == Qt.Key.Key_Equal:
             self.pattern_panel.change_brush_size(+2)
-            return
-        if key == Qt.Key.Key_F1:
-            self.toggle_left_panel()
-            return
-        if key == Qt.Key.Key_F2:
-            self.toggle_bottom_panel()
             return
         super().keyPressEvent(event)
