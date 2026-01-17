@@ -24,9 +24,7 @@ from ui.panels.audio_panel_v2 import AudioPanel
 from ui.panels.pattern_panel_v2 import PatternPanel
 from ui.panels.search_panel_v2 import SearchPanel
 from ui.panels.embedding_panel_v2 import EmbeddingPanel
-from ui.panels.clustering_panel_v2 import ClusteringPanel
 from ui.components.spectrogram_widget import SpectrogramWidget
-from ui.components.clustering_widget import ClusteringWidget
 from core.embedding_manager import EmbeddingManager
 
 
@@ -282,6 +280,8 @@ class MainWindow(QMainWindow):
         self.perch_model = None
         self.perch_model_loading = False
         self._auto_embedding_search_pending = False
+        self._last_nav_index = 0
+        self._cluster_dialog = None
 
         self.init_ui()
         self.connect_signals()
@@ -413,7 +413,7 @@ class MainWindow(QMainWindow):
             ("Selection", 3),
             ("Pattern Search", 4),
             ("Embedding", 5),
-            ("2D Clustering", 6),
+            ("Carte 2D", 6),
         ]
 
         for name, idx in nav_items:
@@ -487,16 +487,6 @@ class MainWindow(QMainWindow):
         spectro_layout.addWidget(self.embedding_results)
 
         self.tabs.addTab(spectro_tab, "Spectrogram")
-
-        # Clustering Tab
-        cluster_tab = QWidget()
-        cluster_layout = QVBoxLayout(cluster_tab)
-        cluster_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.clustering_widget = ClusteringWidget()
-        cluster_layout.addWidget(self.clustering_widget)
-
-        self.tabs.addTab(cluster_tab, "2D Clustering")
 
         layout.addWidget(self.tabs, stretch=1)
 
@@ -634,7 +624,6 @@ class MainWindow(QMainWindow):
         self.pattern_panel = PatternPanel()
         self.search_panel = SearchPanel()
         self.embedding_panel = EmbeddingPanel()
-        self.clustering_panel = ClusteringPanel()
 
         self.panel_stack.addWidget(self.file_panel)       # 0: Files
         self.panel_stack.addWidget(self.spectrogram_panel) # 1: Spectrogram
@@ -642,7 +631,6 @@ class MainWindow(QMainWindow):
         self.panel_stack.addWidget(self.pattern_panel)     # 3: Selection
         self.panel_stack.addWidget(self.search_panel)      # 4: Pattern Search
         self.panel_stack.addWidget(self.embedding_panel)   # 5: Embedding
-        self.panel_stack.addWidget(self.clustering_panel)  # 6: 2D Clustering
 
         self.inspector_layout.addWidget(self.panel_stack)
 
@@ -654,11 +642,15 @@ class MainWindow(QMainWindow):
 
     def on_nav_changed(self, index):
         if index >= 0:
+            if index == 6:
+                self.open_clustering_dialog()
+                self.nav_list.blockSignals(True)
+                self.nav_list.setCurrentRow(self._last_nav_index)
+                self.nav_list.blockSignals(False)
+                return
+            self._last_nav_index = index
             self.panel_stack.setCurrentIndex(index)
-            if index == 6:  # 2D Clustering
-                self.tabs.setCurrentIndex(1)
-            else:
-                self.tabs.setCurrentIndex(0)
+            self.tabs.setCurrentIndex(0)
 
     def toggle_sidebar(self):
         """Toggle sidebar visibility"""
@@ -716,6 +708,20 @@ class MainWindow(QMainWindow):
 
         # Connect selection changed to enable buttons
         self.spectrogram_widget.selectionChanged.connect(self.on_selection_changed)
+
+    def open_clustering_dialog(self):
+        try:
+            from ui.dialogs.clustering_dialog_fast import ClusteringDialogFast
+            if self._cluster_dialog is None or not self._cluster_dialog.isVisible():
+                self._cluster_dialog = ClusteringDialogFast(self)
+                self._cluster_dialog.show_spectrogram_signal.connect(self.show_clustering_spectrogram)
+                self._cluster_dialog.show()
+            else:
+                self._cluster_dialog.raise_()
+                self._cluster_dialog.activateWindow()
+        except ImportError as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Erreur", f"PyQtGraph requis:\npip install pyqtgraph\n\n{e}")
 
     def on_selection_changed(self):
         """Called when a selection is made on the spectrogram"""
@@ -1140,13 +1146,20 @@ class MainWindow(QMainWindow):
             print(f"Selected result {idx}: {result['metadata']}")
 
     def show_embedding_result_spectrogram(self, idx):
-        """Load and display spectrogram for a selected embedding result"""
         if idx < 0 or idx >= len(self.search_results):
             return
         meta = self.search_results[idx]['metadata']
         file_name = meta.get('file')
         start_time = meta.get('start', 0.0)
         end_time = meta.get('end', start_time)
+        if not file_name:
+            return
+        self.nav_list.setCurrentRow(1)
+        self.tabs.setCurrentIndex(0)
+        self.on_file_loaded_with_source(file_name, (start_time, end_time), 'database')
+        self.spectrogram_panel.compute_spectrogram()
+
+    def show_clustering_spectrogram(self, file_name, start_time, end_time):
         if not file_name:
             return
         self.nav_list.setCurrentRow(1)
