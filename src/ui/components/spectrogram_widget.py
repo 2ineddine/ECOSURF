@@ -3,11 +3,18 @@ from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QCursor, QFont
 from PyQt6.QtCore import Qt, QRect, pyqtSignal
 
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+
 
 class SpectrogramWidget(QWidget):
     """Custom widget for displaying and interacting with spectrograms"""
     scrollableChanged = pyqtSignal(bool)
     selectionChanged = pyqtSignal()
+    playback_position_clicked = pyqtSignal(float)  # Emit time position when clicked
 
     def __init__(self):
         super().__init__()
@@ -55,7 +62,10 @@ class SpectrogramWidget(QWidget):
         self.setMinimumSize(800, 400)
         self.setMouseTracking(True)
         self._scrollable = False
-        
+
+        # Colormap setting
+        self.colormap_name = "viridis"
+
         # Cache for colormap optimization
         self._cached_colormap = None
         self._cached_colormap_shape = None
@@ -271,18 +281,17 @@ class SpectrogramWidget(QWidget):
         self.update()
 
 
+    def set_colormap(self, colormap_name):
+        """Set the colormap and refresh display"""
+        self.colormap_name = colormap_name
+        self._cached_colormap = None  # Clear cache
+        self.update_display()
+
     def apply_colormap(self, data):
-        """Hot colormap (like MATLAB's hot) - good for spectrograms - WITH CACHE"""
+        """Apply colormap to spectrogram data"""
         if data.size == 0:
             return np.zeros((*data.shape, 3), dtype=np.uint8)
-        
-        # Check cache - reuse if same shape (viewport scroll optimization)
-        if (self._cached_colormap is not None and 
-            self._cached_colormap_shape == data.shape and
-            not self.zoomed):
-            # For scroll, we can reuse parts of the colormap
-            pass  # Will compute new one for now, but shape check helps
-        
+
         # Normalize to 0-1
         dmin = np.min(data)
         dmax = np.max(data)
@@ -290,22 +299,25 @@ class SpectrogramWidget(QWidget):
             norm_data = (data - dmin) / (dmax - dmin)
         else:
             norm_data = data * 0
-        
-        # Hot colormap implementation - vectorized for speed
+
+        # Use matplotlib colormap if available
+        if MATPLOTLIB_AVAILABLE:
+            try:
+                cmap = plt.get_cmap(self.colormap_name)
+                # Apply colormap (returns RGBA)
+                colored_rgba = cmap(norm_data)
+                # Convert to RGB uint8
+                colored = (colored_rgba[:, :, :3] * 255).astype(np.uint8)
+                return colored
+            except Exception:
+                pass
+
+        # Fallback: Hot colormap implementation
         colored = np.empty((*data.shape, 3), dtype=np.uint8)
-        
-        # Red: ramp up quickly
-        np.clip(norm_data * 1.7 * 255, 0, 255, out=colored[:, :, 0].astype(np.float32)).astype(np.uint8, copy=False)
         colored[:, :, 0] = np.clip(norm_data * 1.7 * 255, 0, 255).astype(np.uint8)
-        # Green: ramp up in middle
         colored[:, :, 1] = np.clip((norm_data * 1.5 - 0.3) * 255, 0, 255).astype(np.uint8)
-        # Blue: only at high values
         colored[:, :, 2] = np.clip((norm_data * 3 - 2) * 255, 0, 255).astype(np.uint8)
-        
-        # Update cache
-        self._cached_colormap = colored
-        self._cached_colormap_shape = data.shape
-        
+
         return colored
 
     def paintEvent(self, event):
@@ -462,38 +474,71 @@ class SpectrogramWidget(QWidget):
                 self.drawing = True
                 self.last_point = event.pos()
                 self.draw_at(event.pos())
+            else:
+                # Normal click - emit position for playback
+                click_time = self.get_time_at_position(event.pos().x())
+                if click_time is not None:
+                    self.playback_position_clicked.emit(click_time)
         elif event.button() == Qt.MouseButton.RightButton and self.brush_enabled:
             # Right-button rectangle selection while brush enabled
             self.rect_select_start = event.pos()
             self.rect_select_rect = QRect(self.rect_select_start, self.rect_select_start)
             self.update()
 
+    def get_time_at_position(self, x_pos):
+        """Convert pixel x position to time"""
+        if self.display_pixmap is None or self.times is None or len(self.times) == 0:
+            return None
+
+        # Get display area
+        display_x = self.left_margin
+        display_width = self.display_pixmap.width()
+
+        # Check if click is within display area
+        if x_pos < display_x or x_pos > display_x + display_width:
+            return None
+
+        # Convert to fraction of display
+        fraction = (x_pos - display_x) / display_width
+
+        # Get viewport time range
+        start_idx, end_idx = self.get_viewport_indices()
+        if start_idx is None or end_idx is None:
+            return None
+
+        start_time = self.times[start_idx]
+        end_time = self.times[min(end_idx, len(self.times) - 1)]
+
+        # Calculate time at click position
+        click_time = start_time + fraction * (end_time - start_time)
+        return click_time
+
     def mouseMoveEvent(self, event):
         if self.rect_selection_mode and self.zoom_start:
-            # Rectangle selection mode - update rectangle avec limite de 5 secondes
+            # Rectangle selection mode - update rectangle avec limite de 10 secondes
             raw_rect = QRect(self.zoom_start, event.pos()).normalized()
-            
-            # Limiter à 5 secondes max
+
+            # Limiter à 10 secondes max (libre entre 0-10s)
             if self.times is not None and self.display_pixmap is not None and len(self.times) > 1:
-                # Calculer la durée totale affichée
+                # Calculer la duree totale affichee
                 start_idx, end_idx = self.get_viewport_indices()
                 if start_idx is not None and end_idx is not None:
                     displayed_duration = self.times[min(end_idx, len(self.times)-1)] - self.times[start_idx]
                     if displayed_duration > 0:
-                        # Calculer la largeur max en pixels pour 5 secondes
-                        max_duration = 5.0
+                        # Calculer la largeur max en pixels pour 10 secondes
+                        max_duration = 10.0
                         pixels_per_second = self.display_pixmap.width() / displayed_duration
                         max_width_pixels = int(pixels_per_second * max_duration)
-                        
+
                         # Limiter la largeur du rectangle
                         if raw_rect.width() > max_width_pixels:
                             if event.pos().x() > self.zoom_start.x():
-                                # Sélection vers la droite
+                                # Selection vers la droite
                                 raw_rect.setRight(raw_rect.left() + max_width_pixels)
                             else:
-                                # Sélection vers la gauche
+                                # Selection vers la gauche
                                 raw_rect.setLeft(raw_rect.right() - max_width_pixels)
-            
+
             self.zoom_rect = raw_rect
             self.update()
         elif self.zoom_enabled and self.zoom_start:

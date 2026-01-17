@@ -53,6 +53,7 @@ def apply_mask_and_reconstruct(
     masked_magnitude = magnitude * m
     masked_stft = masked_magnitude * np.exp(1j * phase)
 
+
     reconstructed = librosa.istft(masked_stft, hop_length=hop_length, win_length=n_fft, length=length)
 
     if reconstructed.size and np.max(np.abs(reconstructed)) > 0:

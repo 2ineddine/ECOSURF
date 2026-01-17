@@ -221,7 +221,7 @@ class EmbeddingPanel(QWidget):
         search_layout.setSpacing(10)
         search_layout.setContentsMargins(10, 10, 10, 10)
 
-        search_hint = QLabel("Select region on spectrogram (max 5s)")
+        search_hint = QLabel("Select region on spectrogram (max 10s)")
         search_hint.setStyleSheet("font-size: 10px; color: #7F8C8D;")
         search_hint.setWordWrap(True)
         search_layout.addWidget(search_hint)
@@ -307,15 +307,30 @@ class EmbeddingPanel(QWidget):
         self.search_btn.setEnabled(True)
 
     def show_results(self, results):
-        """Display search results"""
+        """Display search results with date and info"""
         self.results_list.clear()
         self.results_data = results
 
         for i, r in enumerate(results[:10]):  # Show top 10 in compact list
             meta = r['metadata']
             score = r['similarity'] * 100
-            text = f"#{i+1} | {score:.0f}% | {meta['file'][:12]}..."
-            self.results_list.addItem(text)
+            # Extract date from filename (format: SITE_YYYYMMDD_HHMMSS.WAV)
+            file_parts = meta.get('file', '').split('_')
+            date_str = ""
+            if len(file_parts) >= 3:
+                try:
+                    date_part = file_parts[1]
+                    time_part = file_parts[2].split('.')[0] if '.' in file_parts[2] else file_parts[2]
+                    date_str = f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]} {time_part[:2]}:{time_part[2:4]}"
+                except:
+                    date_str = ""
+            start = meta.get('start', 0)
+            end = meta.get('end', 0)
+            duration = end - start
+            text = f"#{i+1} | {score:.0f}% | {date_str} | {duration:.1f}s"
+            item = QListWidgetItem(text)
+            item.setToolTip(f"File: {meta.get('file', 'N/A')}\nStart: {start:.1f}s - End: {end:.1f}s")
+            self.results_list.addItem(item)
 
         self.results_card.setVisible(True)
         self.results_count.setText(f"{len(results)} similar sounds found")

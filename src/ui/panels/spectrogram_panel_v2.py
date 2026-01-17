@@ -114,6 +114,7 @@ PANEL_STYLE = """
 class SpectrogramPanel(QWidget):
     """Panel de configuration du spectrogramme - Style professionnel bleu"""
     spectrogram_computed = pyqtSignal(object)
+    colormap_changed = pyqtSignal(str)
     
     def __init__(self):
         super().__init__()
@@ -202,6 +203,7 @@ class SpectrogramPanel(QWidget):
         self.colormap_combo.addItems(["viridis", "plasma", "magma", "inferno", "jet", "gray"])
         self.colormap_combo.setCurrentText("viridis")
         self.colormap_combo.setFixedWidth(100)
+        self.colormap_combo.currentTextChanged.connect(self.on_colormap_changed)
         cmap_row.addWidget(cmap_label)
         cmap_row.addWidget(self.colormap_combo)
         cmap_row.addStretch()
@@ -299,3 +301,7 @@ class SpectrogramPanel(QWidget):
         self.compute_btn.setEnabled(True)
         self.status_label.setText("Error")
         self.status_label.setStyleSheet("font-size: 11px; color: #E74C3C;")
+
+    def on_colormap_changed(self, colormap_name):
+        """Emit colormap change signal"""
+        self.colormap_changed.emit(colormap_name)

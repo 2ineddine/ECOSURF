@@ -8,9 +8,9 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QFrame, QComboBox, QDateTimeEdit, QSpinBox, QCalendarWidget,
-    QGridLayout, QSizePolicy
+    QGridLayout, QSizePolicy, QDialog, QTimeEdit
 )
-from PyQt6.QtCore import pyqtSignal, Qt, QDateTime, QDate
+from PyQt6.QtCore import pyqtSignal, Qt, QDateTime, QDate, QTime
 from PyQt6.QtGui import QFont, QIcon
 import soundfile as sf
 import numpy as np
@@ -206,6 +206,250 @@ QCalendarWidget QTableView {
 """
 
 
+class CalendarDialog(QDialog):
+    """Calendrier propre et bien visible"""
+    date_selected = pyqtSignal(QDateTime)
+
+    def __init__(self, parent=None, current_datetime=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Date & Time")
+        self.setModal(True)
+        self.setMinimumSize(350, 420)
+        self.setMaximumSize(400, 480)
+
+        # Style global
+        self.setStyleSheet("""
+            QDialog {
+                background: white;
+            }
+            QLabel {
+                color: #2C3E50;
+            }
+            QPushButton {
+                font-size: 12px;
+            }
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(12)
+
+        # Header avec bouton fermer
+        header_row = QHBoxLayout()
+        header_label = QLabel("Select Date & Time")
+        header_label.setStyleSheet("""
+            font-size: 16px;
+            font-weight: bold;
+            color: #2C3E50;
+        """)
+        header_row.addWidget(header_label)
+        header_row.addStretch()
+
+        close_btn = QPushButton("X")
+        close_btn.setFixedSize(30, 30)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: #E74C3C;
+                color: white;
+                border: none;
+                border-radius: 15px;
+                font-weight: bold;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: #C0392B;
+            }
+        """)
+        close_btn.clicked.connect(self.reject)
+        header_row.addWidget(close_btn)
+        layout.addLayout(header_row)
+
+        # Ligne de separation
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet("background: #3498DB; min-height: 2px; max-height: 2px;")
+        layout.addWidget(line)
+
+        # Calendar widget
+        self.calendar = QCalendarWidget()
+        self.calendar.setGridVisible(True)
+        self.calendar.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+        self.calendar.setStyleSheet("""
+            QCalendarWidget {
+                background: white;
+                border: 1px solid #E0E0E0;
+                border-radius: 8px;
+            }
+            QCalendarWidget QToolButton {
+                color: #2C3E50;
+                background: #F8F9FA;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 10px;
+                font-weight: 600;
+                font-size: 12px;
+            }
+            QCalendarWidget QToolButton:hover {
+                background: #3498DB;
+                color: white;
+            }
+            QCalendarWidget QMenu {
+                background: white;
+                border: 1px solid #E0E0E0;
+            }
+            QCalendarWidget QSpinBox {
+                background: white;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QCalendarWidget QTableView {
+                background: white;
+                selection-background-color: #3498DB;
+                selection-color: white;
+                font-size: 12px;
+            }
+            QCalendarWidget QTableView::item:hover {
+                background: #EBF5FB;
+            }
+            QCalendarWidget QWidget#qt_calendar_navigationbar {
+                background: #F8F9FA;
+                border-radius: 6px;
+                padding: 4px;
+            }
+        """)
+        if current_datetime:
+            self.calendar.setSelectedDate(current_datetime.date())
+        # Double-clic pour selection rapide
+        self.calendar.activated.connect(self.on_date_activated)
+        layout.addWidget(self.calendar)
+
+        # Time selection
+        time_frame = QFrame()
+        time_frame.setStyleSheet("""
+            QFrame {
+                background: #F8F9FA;
+                border: 1px solid #E0E0E0;
+                border-radius: 8px;
+                padding: 8px;
+            }
+        """)
+        time_layout = QHBoxLayout(time_frame)
+        time_layout.setContentsMargins(12, 8, 12, 8)
+
+        time_label = QLabel("Time:")
+        time_label.setStyleSheet("font-weight: 600; font-size: 13px; color: #2C3E50;")
+        time_layout.addWidget(time_label)
+
+        self.hour_spin = QSpinBox()
+        self.hour_spin.setRange(0, 23)
+        self.hour_spin.setFixedWidth(60)
+        self.hour_spin.setStyleSheet("""
+            QSpinBox {
+                background: white;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                padding: 6px;
+                font-size: 14px;
+                font-weight: 600;
+            }
+            QSpinBox:focus {
+                border-color: #3498DB;
+            }
+        """)
+        time_layout.addWidget(self.hour_spin)
+
+        time_layout.addWidget(QLabel(":"))
+
+        self.minute_spin = QSpinBox()
+        self.minute_spin.setRange(0, 59)
+        self.minute_spin.setFixedWidth(60)
+        self.minute_spin.setStyleSheet("""
+            QSpinBox {
+                background: white;
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                padding: 6px;
+                font-size: 14px;
+                font-weight: 600;
+            }
+            QSpinBox:focus {
+                border-color: #3498DB;
+            }
+        """)
+        time_layout.addWidget(self.minute_spin)
+
+        if current_datetime:
+            self.hour_spin.setValue(current_datetime.time().hour())
+            self.minute_spin.setValue(current_datetime.time().minute())
+        else:
+            self.hour_spin.setValue(12)
+            self.minute_spin.setValue(0)
+
+        time_layout.addStretch()
+        layout.addWidget(time_frame)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(12)
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setFixedHeight(40)
+        self.cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: #95A5A6;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 13px;
+                padding: 0 25px;
+            }
+            QPushButton:hover {
+                background: #7F8C8D;
+            }
+        """)
+        self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(self.cancel_btn)
+
+        self.select_btn = QPushButton("Select Date")
+        self.select_btn.setFixedHeight(40)
+        self.select_btn.setStyleSheet("""
+            QPushButton {
+                background: #27AE60;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 13px;
+                padding: 0 25px;
+            }
+            QPushButton:hover {
+                background: #229954;
+            }
+        """)
+        self.select_btn.clicked.connect(self.on_select)
+        btn_layout.addWidget(self.select_btn)
+
+        layout.addLayout(btn_layout)
+
+    def on_date_activated(self, date):
+        """Double-clic sur une date = selection directe"""
+        self.on_select()
+
+    def on_select(self):
+        date = self.calendar.selectedDate()
+        time = QTime(self.hour_spin.value(), self.minute_spin.value())
+        dt = QDateTime(date, time)
+        self.date_selected.emit(dt)
+        self.accept()
+
+    def get_datetime(self):
+        date = self.calendar.selectedDate()
+        time = QTime(self.hour_spin.value(), self.minute_spin.value())
+        return QDateTime(date, time)
+
+
 class FilePanel(QWidget):
     """File panel with compact professional buttons"""
     folder_loaded = pyqtSignal(list)
@@ -290,28 +534,42 @@ class FilePanel(QWidget):
         dt_label.setStyleSheet("font-weight: 600; color: #2C3E50; margin-top: 4px;")
         s3_layout.addWidget(dt_label)
 
-        # DateTime picker with calendar
+        # DateTime picker with calendar button
+        dt_row = QHBoxLayout()
+        dt_row.setSpacing(6)
+
         self.datetime_edit = QDateTimeEdit()
         self.datetime_edit.setDisplayFormat("dd MMM yyyy  HH:mm")
-        self.datetime_edit.setCalendarPopup(True)
+        self.datetime_edit.setCalendarPopup(False)  # Disable built-in popup
         self.datetime_edit.setDateTime(QDateTime(2019, 2, 18, 16, 30))
-        self.datetime_edit.setMinimumWidth(180)
+        self.datetime_edit.setMinimumWidth(160)
+        dt_row.addWidget(self.datetime_edit)
 
-        # Style the calendar popup
-        calendar = self.datetime_edit.calendarWidget()
-        if calendar:
-            calendar.setGridVisible(True)
-            calendar.setStyleSheet("""
-                QCalendarWidget QToolButton {
-                    color: #2C3E50;
-                    font-weight: 500;
-                }
-                QCalendarWidget QTableView {
-                    selection-background-color: #3498DB;
-                }
-            """)
+        # Calendar button - plus visible avec icone
+        self.calendar_btn = QPushButton("Select...")
+        self.calendar_btn.setFixedSize(70, 34)
+        self.calendar_btn.setToolTip("Open calendar to select date")
+        self.calendar_btn.setStyleSheet("""
+            QPushButton {
+                background: #9B59B6;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: 600;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background: #8E44AD;
+            }
+            QPushButton:pressed {
+                background: #7D3C98;
+            }
+        """)
+        self.calendar_btn.clicked.connect(self.show_calendar_popup)
+        dt_row.addWidget(self.calendar_btn)
+        dt_row.addStretch()
 
-        s3_layout.addWidget(self.datetime_edit)
+        s3_layout.addLayout(dt_row)
 
         # Duration
         dur_row = QHBoxLayout()
@@ -471,3 +729,14 @@ class FilePanel(QWidget):
         """Update file info display"""
         self.info_card.setVisible(True)
         self.info_label.setText(text)
+
+    def show_calendar_popup(self):
+        """Show calendar dialog - centered and visible"""
+        current_dt = self.datetime_edit.dateTime()
+        dialog = CalendarDialog(self, current_dt)
+        dialog.date_selected.connect(self.on_calendar_date_selected)
+        dialog.exec()
+
+    def on_calendar_date_selected(self, dt):
+        """Handle date selection from calendar popup"""
+        self.datetime_edit.setDateTime(dt)

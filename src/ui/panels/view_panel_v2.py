@@ -124,44 +124,56 @@ class ViewPanel(QWidget):
         zoom_group = QGroupBox("Zoom")
         zoom_layout = QVBoxLayout()
         zoom_layout.setSpacing(10)
-        
+
         # Enable zoom checkbox
-        self.zoom_checkbox = QCheckBox("Enable zoom mode")
+        self.zoom_checkbox = QCheckBox("Enable zoom mode (mouse rectangle)")
         self.zoom_checkbox.stateChanged.connect(self.on_zoom_toggled)
         zoom_layout.addWidget(self.zoom_checkbox)
-        
-        # Zoom buttons row
+
+        # Instructions
+        zoom_info = QLabel("Draw rectangle on spectrogram to zoom")
+        zoom_info.setStyleSheet("font-size: 10px; color: #7F8C8D; font-style: italic;")
+        zoom_layout.addWidget(zoom_info)
+
+        # Zoom buttons row - clear labels
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
-        
-        self.zoom_in_btn = QPushButton("+")
-        self.zoom_in_btn.setFixedSize(36, 36)
+
+        self.zoom_in_btn = QPushButton("Zoom +")
+        self.zoom_in_btn.setFixedHeight(32)
         self.zoom_in_btn.setToolTip("Zoom In")
         self.zoom_in_btn.clicked.connect(lambda: self.on_zoom_level(1.5))
-        
-        self.zoom_out_btn = QPushButton("-")
-        self.zoom_out_btn.setFixedSize(36, 36)
+
+        self.zoom_out_btn = QPushButton("Zoom -")
+        self.zoom_out_btn.setFixedHeight(32)
         self.zoom_out_btn.setToolTip("Zoom Out")
         self.zoom_out_btn.clicked.connect(lambda: self.on_zoom_level(0.67))
-        
-        self.zoom_reset_btn = QPushButton("R")
-        self.zoom_reset_btn.setFixedSize(36, 36)
-        self.zoom_reset_btn.setToolTip("Reset Zoom")
-        self.zoom_reset_btn.clicked.connect(self.on_zoom_reset)
-        
-        self.zoom_fit_btn = QPushButton("Fit")
-        self.zoom_fit_btn.setFixedSize(36, 36)
-        self.zoom_fit_btn.setToolTip("Fit to Window")
-        
+
         btn_row.addWidget(self.zoom_in_btn)
         btn_row.addWidget(self.zoom_out_btn)
-        btn_row.addWidget(self.zoom_reset_btn)
-        btn_row.addWidget(self.zoom_fit_btn)
         btn_row.addStretch()
         zoom_layout.addLayout(btn_row)
-        
+
+        # Reset button - clear and prominent
+        self.zoom_reset_btn = QPushButton("Reset View")
+        self.zoom_reset_btn.setFixedHeight(34)
+        self.zoom_reset_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E74C3C;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #C0392B;
+            }
+        """)
+        self.zoom_reset_btn.clicked.connect(self.on_zoom_reset)
+        zoom_layout.addWidget(self.zoom_reset_btn)
+
         # Zoom level display
-        self.zoom_label = QLabel("100%")
+        self.zoom_label = QLabel("Zoom: 100%")
         self.zoom_label.setStyleSheet("""
             font-size: 12px;
             font-weight: 500;
@@ -169,15 +181,15 @@ class ViewPanel(QWidget):
         """)
         self.zoom_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         zoom_layout.addWidget(self.zoom_label)
-        
+
         zoom_group.setLayout(zoom_layout)
         layout.addWidget(zoom_group)
-        
+
         # Navigation
         nav_group = QGroupBox("Navigation")
         nav_layout = QVBoxLayout()
         nav_layout.setSpacing(8)
-        
+
         # Scroll position
         scroll_row = QHBoxLayout()
         scroll_label = QLabel("Position:")
@@ -189,42 +201,34 @@ class ViewPanel(QWidget):
         scroll_row.addWidget(scroll_label)
         scroll_row.addWidget(self.scroll_slider)
         nav_layout.addLayout(scroll_row)
-        
+
         nav_group.setLayout(nav_layout)
         layout.addWidget(nav_group)
-        
-        # Cursor Mode
-        cursor_group = QGroupBox("Cursor")
-        cursor_layout = QHBoxLayout()
-        cursor_layout.setSpacing(8)
-        
-        self.pointer_btn = QPushButton("Ptr")
-        self.pointer_btn.setFixedSize(36, 36)
-        self.pointer_btn.setToolTip("Pointer")
-        self.pointer_btn.setCheckable(True)
-        self.pointer_btn.setChecked(True)
-        self.pointer_btn.clicked.connect(lambda: self.set_cursor_mode("pointer"))
-        
-        self.crosshair_btn = QPushButton("+")
-        self.crosshair_btn.setFixedSize(36, 36)
-        self.crosshair_btn.setToolTip("Crosshair")
-        self.crosshair_btn.setCheckable(True)
-        self.crosshair_btn.clicked.connect(lambda: self.set_cursor_mode("crosshair"))
-        
-        self.hand_btn = QPushButton("Pan")
-        self.hand_btn.setFixedSize(36, 36)
-        self.hand_btn.setToolTip("Pan")
-        self.hand_btn.setCheckable(True)
-        self.hand_btn.clicked.connect(lambda: self.set_cursor_mode("hand"))
-        
-        cursor_layout.addWidget(self.pointer_btn)
-        cursor_layout.addWidget(self.crosshair_btn)
-        cursor_layout.addWidget(self.hand_btn)
-        cursor_layout.addStretch()
-        
-        cursor_group.setLayout(cursor_layout)
-        layout.addWidget(cursor_group)
-        
+
+        # Keyboard shortcuts info
+        shortcuts_group = QGroupBox("Shortcuts")
+        shortcuts_layout = QVBoxLayout()
+        shortcuts_layout.setSpacing(4)
+
+        shortcuts = [
+            ("Space", "Play / Pause"),
+            ("R", "Reset view"),
+        ]
+        for key, action in shortcuts:
+            row = QHBoxLayout()
+            key_label = QLabel(key)
+            key_label.setFixedWidth(60)
+            key_label.setStyleSheet("font-weight: 600; color: #3498DB; font-size: 11px;")
+            action_label = QLabel(action)
+            action_label.setStyleSheet("font-size: 11px; color: #5D6D7E;")
+            row.addWidget(key_label)
+            row.addWidget(action_label)
+            row.addStretch()
+            shortcuts_layout.addLayout(row)
+
+        shortcuts_group.setLayout(shortcuts_layout)
+        layout.addWidget(shortcuts_group)
+
         layout.addStretch()
         
     def on_zoom_toggled(self, state):
@@ -232,33 +236,23 @@ class ViewPanel(QWidget):
         self.zoom_toggled.emit(enabled)
         
     def on_zoom_reset(self):
-        self.zoom_label.setText("100%")
+        self.zoom_label.setText("Zoom: 100%")
         self.zoom_reset_requested.emit()
-        
-    def on_zoom_level(self, factor):
-        # Update display
-        current = int(self.zoom_label.text().replace("%", ""))
-        new_level = max(10, min(500, int(current * factor)))
-        self.zoom_label.setText(f"{new_level}%")
-        self.zoom_level_changed.emit(factor)
-        
+
     def on_scroll_changed(self, value):
         self.viewport_scrolled.emit(value)
-        
-    def set_cursor_mode(self, mode):
-        # Update button states
-        self.pointer_btn.setChecked(mode == "pointer")
-        self.crosshair_btn.setChecked(mode == "crosshair")
-        self.hand_btn.setChecked(mode == "hand")
-        
-        # Emit cursor
-        cursors = {
-            "pointer": Qt.CursorShape.ArrowCursor,
-            "crosshair": Qt.CursorShape.CrossCursor,
-            "hand": Qt.CursorShape.OpenHandCursor
-        }
-        self.cursor_changed.emit(QCursor(cursors.get(mode, Qt.CursorShape.ArrowCursor)))
-        
+
+    def on_zoom_level(self, factor):
+        # Update display
+        current_text = self.zoom_label.text().replace("Zoom: ", "").replace("%", "")
+        try:
+            current = int(current_text)
+        except ValueError:
+            current = 100
+        new_level = max(10, min(500, int(current * factor)))
+        self.zoom_label.setText(f"Zoom: {new_level}%")
+        self.zoom_level_changed.emit(factor)
+
     def set_zoom_level(self, level):
         """External update of zoom level"""
         self.zoom_label.setText(f"{int(level)}%")
