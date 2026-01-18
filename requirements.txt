@@ -1,40 +1,33 @@
-# Windows target (tested with Python 3.10/3.11)
+# ECOSURF - Bioacoustic Analysis Application
+# Python 3.10 or 3.11 recommended
+# Install with: pip install -r requirements.txt
 
 # GUI Framework
-PyQt6>=6.5.0
+PyQt6>=6.5.0,<7.0.0
 
 # Audio Processing
-librosa>=0.10.0
-soundfile>=0.12.0
+librosa>=0.10.0,<0.11.0
+soundfile>=0.12.0,<0.13.0
+sounddevice>=0.4.6,<0.5.0
 
 # Numerical Computing
 numpy>=1.24.0,<2.0.0
-scipy>=1.10.0
-
-# Audio Playback
-pyaudio>=0.2.11
+scipy>=1.10.0,<2.0.0
 
 # AWS S3 Integration
-boto3>=1.28.0
+boto3>=1.28.0,<2.0.0
 
-# Plotting (for spectrograms)
-matplotlib>=3.7.0
-mplcursors>=0.5.0
-pyqtgraph>=0.13.3
+# Plotting
+matplotlib>=3.7.0,<4.0.0
+mplcursors>=0.5.0,<0.6.0
+pyqtgraph>=0.13.3,<0.14.0
 
-# Fast GPU-accelerated plotting (for 2D map)
-pyqtgraph>=0.13.0
+# Similarity Search (FAISS)
+faiss-cpu>=1.7.4,<2.0.0
 
-# Audio Playback (alternative)
-sounddevice>=0.4.6
+# Machine Learning / Embeddings
+tensorflow>=2.13.0,<3.0.0
 
-# Embedding / Perch
-perch-hoplite
-tensorflow>=2.13.0
-
-# Similarity search
-faiss-cpu>=1.7.4
-
-# Librosa deps (explicit for smoother installs)
-numba>=0.57.0
-resampy>=0.4.2
+# Librosa dependencies
+numba>=0.57.0,<0.60.0
+resampy>=0.4.2,<0.5.0
