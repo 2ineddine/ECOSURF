@@ -113,9 +113,9 @@ class EmbeddingResultsWidget(QWidget):
 
         # Close button
         self.close_btn = QPushButton("X")
-        self.close_btn.setFixedSize(26, 26)
+        self.close_btn.setFixedSize(32, 26)
         self.close_btn.setStyleSheet("""
-            QPushButton { background: #E74C3C; color: white; border: none; border-radius: 4px; font-weight: bold; }
+            QPushButton { background: #E74C3C; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; }
             QPushButton:hover { background: #C0392B; }
         """)
         self.close_btn.clicked.connect(self.on_close)
@@ -1075,24 +1075,38 @@ class MainWindow(QMainWindow):
             else:
                 self.embedding_panel.status_label.setText("Embeddings not loaded")
             return
-        self.embedding_panel.status_label.setText("Computing Perch embedding...")
+
+        # Start progress bar
+        self.embedding_panel.start_search_progress()
+        self.embedding_panel.update_search_progress(10, "Preparing audio...")
+
         sr = self.audio_data['sample_rate']
         audio = self.audio_data['audio']
         start_sample = int(start_time * sr)
         end_sample = int(end_time * sr)
         selection_audio = audio[start_sample:end_sample]
+
+        self.embedding_panel.update_search_progress(30, "Computing Perch embedding...")
         query_emb = self.compute_embedding(selection_audio, sr)
+
         if query_emb is not None:
-            self.embedding_panel.status_label.setText("Searching database...")
+            self.embedding_panel.update_search_progress(70, "Searching database...")
             results = self.embedding_manager.search(query_emb, top_k=20)
+
+            self.embedding_panel.update_search_progress(90, "Loading results...")
             self.embedding_panel.show_results(results)
             self.search_results = results
-            self.embedding_panel.status_label.setText(f"{len(results)} results found")
+
+            self.embedding_panel.update_search_progress(100, f"{len(results)} results found")
 
             # Show results in the main panel
             self.embedding_results.show_results(results)
             self.embedding_results.setVisible(True)
+
+            self.embedding_panel.finish_search_progress()
+            self.embedding_panel.status_label.setText(f"{len(results)} results found")
         else:
+            self.embedding_panel.finish_search_progress()
             self.embedding_panel.status_label.setText("Embedding computation failed")
 
     def load_perch_model(self):

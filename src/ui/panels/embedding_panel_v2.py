@@ -4,7 +4,7 @@ Search controls only - results displayed in main panel
 """
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QFrame, QListWidget, QListWidgetItem
+    QFrame, QListWidget, QListWidgetItem, QProgressBar
 )
 from PyQt6.QtCore import pyqtSignal, Qt, QThread
 import numpy as np
@@ -232,6 +232,29 @@ class EmbeddingPanel(QWidget):
         self.search_btn.clicked.connect(lambda: self.search_requested.emit())
         search_layout.addWidget(self.search_btn)
 
+        # Progress bar for search
+        self.search_progress = QProgressBar()
+        self.search_progress.setVisible(False)
+        self.search_progress.setFixedHeight(8)
+        self.search_progress.setTextVisible(False)
+        self.search_progress.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                border-radius: 4px;
+                background: #E8E8E8;
+            }
+            QProgressBar::chunk {
+                background: #3498DB;
+                border-radius: 4px;
+            }
+        """)
+        search_layout.addWidget(self.search_progress)
+
+        self.search_status = QLabel("")
+        self.search_status.setStyleSheet("font-size: 10px; color: #7F8C8D;")
+        self.search_status.setVisible(False)
+        search_layout.addWidget(self.search_status)
+
         layout.addWidget(search_card)
 
         # Results summary card
@@ -256,47 +279,17 @@ class EmbeddingPanel(QWidget):
 
         layout.addWidget(self.results_card)
 
-        # Quick results list (compact)
-        results_list_card = QFrame()
-        results_list_card.setObjectName("card")
-        list_layout = QVBoxLayout(results_list_card)
-        list_layout.setSpacing(8)
-        list_layout.setContentsMargins(10, 10, 10, 10)
-
-        list_header = QHBoxLayout()
-        list_title = QLabel("Quick Play")
-        list_title.setStyleSheet("font-weight: 500; color: #2C3E50; font-size: 11px;")
-        list_header.addWidget(list_title)
-
-        self.play_btn = QPushButton("Play")
-        self.play_btn.setObjectName("secondary_btn")
-        self.play_btn.setFixedWidth(60)
-        self.play_btn.setEnabled(False)
-        self.play_btn.clicked.connect(self.play_selected)
-        list_header.addWidget(self.play_btn)
-
-        self.stop_btn = QPushButton("Stop")
-        self.stop_btn.setObjectName("secondary_btn")
-        self.stop_btn.setFixedWidth(50)
-        self.stop_btn.setEnabled(False)
-        self.stop_btn.clicked.connect(self.stop_audio)
-        list_header.addWidget(self.stop_btn)
-
-        list_layout.addLayout(list_header)
-
-        self.results_list = QListWidget()
-        self.results_list.setMaximumHeight(120)
-        self.results_list.itemClicked.connect(self.on_result_clicked)
-        self.results_list.itemDoubleClicked.connect(lambda: self.play_selected())
-        list_layout.addWidget(self.results_list)
-
-        self.audio_status = QLabel("")
-        self.audio_status.setObjectName("status")
-        list_layout.addWidget(self.audio_status)
-
-        layout.addWidget(results_list_card)
-
         layout.addStretch()
+
+        # Hidden elements for compatibility
+        self.play_btn = QPushButton()
+        self.play_btn.setVisible(False)
+        self.stop_btn = QPushButton()
+        self.stop_btn.setVisible(False)
+        self.results_list = QListWidget()
+        self.results_list.setVisible(False)
+        self.audio_status = QLabel("")
+        self.audio_status.setVisible(False)
 
     def on_embeddings_loaded(self, count):
         """Called when embeddings are loaded"""
@@ -304,6 +297,25 @@ class EmbeddingPanel(QWidget):
         self.status_label.setStyleSheet("font-size: 11px; color: #27AE60;")
         self.load_btn.setText("Loaded")
         self.load_btn.setEnabled(False)
+        self.search_btn.setEnabled(True)
+
+    def start_search_progress(self):
+        """Show and start the search progress bar"""
+        self.search_progress.setVisible(True)
+        self.search_progress.setValue(0)
+        self.search_status.setVisible(True)
+        self.search_btn.setEnabled(False)
+
+    def update_search_progress(self, value, text=""):
+        """Update the search progress bar"""
+        self.search_progress.setValue(value)
+        if text:
+            self.search_status.setText(text)
+
+    def finish_search_progress(self):
+        """Hide the search progress bar"""
+        self.search_progress.setVisible(False)
+        self.search_status.setVisible(False)
         self.search_btn.setEnabled(True)
 
     def show_results(self, results):

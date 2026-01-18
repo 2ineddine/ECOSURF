@@ -6,17 +6,6 @@
 pip install -r requirements.txt
 ```
 
-## Configuration
-
-Placez `credentials.json` a la racine du projet:
-```json
-{
-  "endpoint": "https://...",
-  "ACCESS_KEY": "...",
-  "SECRET_KEY": "...",
-  "bucket": "ecosurf-dataset"
-}
-```
 
 ## Telechargement des donnees
 
