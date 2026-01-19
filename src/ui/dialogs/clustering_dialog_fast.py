@@ -391,7 +391,7 @@ class ClusteringDialogFast(QDialog):
         paths = ['perch2/', '../perch2/', '../../perch2/', 'src/perch2/']
         for base in paths:
             coords = os.path.join(base, 'embeddings_2d_ALL.npy')
-            labels_f = os.path.join(base, 'labels_v2.npy')
+            labels_f = os.path.join(base, 'labels.npy')
             meta_f = os.path.join(base, 'perch_info_FINAL.pkl')
             species_f = os.path.join(base, 'cluster_species_mapping.pkl')
             if os.path.exists(coords) and os.path.exists(labels_f):

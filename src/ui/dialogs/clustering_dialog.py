@@ -613,7 +613,7 @@ class ClusteringDialog(QDialog):
             base_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'perch2')
             
             self.embeddings_2d = np.load(os.path.join(base_path, 'embeddings_2d_ALL.npy'), mmap_mode='r')
-            self.labels = np.load(os.path.join(base_path, 'labels_v2.npy'))
+            self.labels = np.load(os.path.join(base_path, 'labels.npy'))
             
             with open(os.path.join(base_path, 'perch_info_FINAL.pkl'), 'rb') as f:
                 self.metadata = pickle.load(f)

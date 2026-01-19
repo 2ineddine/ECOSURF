@@ -517,17 +517,6 @@ class FilePanel(QWidget):
         s3_layout.setSpacing(12)
         s3_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Site Selection
-        site_row = QHBoxLayout()
-        site_label = QLabel("Site:")
-        site_label.setStyleSheet("font-weight: 500; color: #5D6D7E;")
-        self.site_combo = QComboBox()
-        self.site_combo.addItems(["S4A09154", "S4A09155", "S4A09156", "S4A09157"])
-        self.site_combo.setMinimumWidth(130)
-        site_row.addWidget(site_label)
-        site_row.addWidget(self.site_combo)
-        site_row.addStretch()
-        s3_layout.addLayout(site_row)
 
         # Date & Time Selection
         dt_label = QLabel("Date & Time")
@@ -669,11 +658,25 @@ class FilePanel(QWidget):
                 except:
                     pass
 
+    def get_site_from_date(self, year):
+        """Determine site based on year"""
+        site_mapping = {
+            2019: ["S4A09154"],
+            2020: ["S4A09154"],
+            2021: ["S4A06374", "S4A09128", "S4A09154"],
+            2022: ["S4A06374"],
+            2023: ["S4A06374", "S4A90112"]
+        }
+        sites = site_mapping.get(year, ["S4A09154"])
+        return sites[0]
+
     def load_from_s3(self):
         """Load audio from S3 based on selections"""
         dt = self.datetime_edit.dateTime()
-        site = self.site_combo.currentText()
         duration = self.duration_spin.value()
+
+        year = dt.date().year()
+        site = self.get_site_from_date(year)
 
         date_str = dt.toString("yyyyMMdd")
 

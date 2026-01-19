@@ -15,7 +15,7 @@ except ImportError:
 
 DATA_FILES = [
     "embeddings_2d_ALL.npy",
-    "labels_v2.npy",
+    "labels.npy",
     "perch_info_FINAL.pkl",
     "perch_embeddings_FINAL.npy",
     "perch_embeddings_sample10.npy",

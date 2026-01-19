@@ -13,7 +13,7 @@ DEFAULT_PREFIX = "perch/"
 DEFAULT_FILES = [
     "perch_embeddings_FINAL.npy",
     "perch_info_FINAL.pkl",
-    "labels_v2.npy",
+    "labels.npy",
     "embeddings_2d_ALL.npy",
     "perch_info_sample10.pkl",
     "perch_embeddings_sample10.faiss",

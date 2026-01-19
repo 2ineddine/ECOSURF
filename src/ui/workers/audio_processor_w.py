@@ -84,7 +84,8 @@ class AudioProcessor(QThread):
         """Build S3 URI from filename like S4A09154_20190218_163000.flac"""
         parts = filename.split('_')
         site = parts[0] if len(parts) >= 1 else ""
-        return f"s3://ecosurf-dataset/2019/{site}/Data/{filename}"
+        year = parts[1][:4] if len(parts) >= 2 and len(parts[1]) >= 4 else "2019"
+        return f"s3://ecosurf-dataset/{year}/{site}/Data/{filename}"
 
     def _process_database_single(self):
         """Process single file from database (S3)"""

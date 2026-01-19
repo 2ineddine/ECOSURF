@@ -94,7 +94,7 @@ Embedding and data directory:
 - `perch2/`: local data and embedding artifacts used by embedding search
   - `perch2/perch_embeddings_FINAL.npy`: full embedding vectors.
   - `perch2/perch_info_FINAL.pkl`: metadata for embeddings.
-  - `perch2/labels_v2.npy`: clustering labels.
+  - `perch2/labels.npy`: clustering labels.
   - `perch2/embeddings_2d_ALL.npy`: 2D embeddings for visualization.
   - `perch2/perch_embeddings_sample10.npy`: sampled embeddings.
   - `perch2/perch_embeddings_sample10.faiss`: FAISS index for sample set.
