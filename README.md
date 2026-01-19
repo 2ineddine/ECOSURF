@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ECOSURF - Bioacoustic Analysis
 
 ## Installation
@@ -44,3 +45,5 @@ perch2/
 ```bash
 python main.py
 ```
+=======
+>>>>>>> dev_faycal

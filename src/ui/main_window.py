@@ -113,9 +113,9 @@ class EmbeddingResultsWidget(QWidget):
 
         # Close button
         self.close_btn = QPushButton("X")
-        self.close_btn.setFixedSize(26, 26)
+        self.close_btn.setFixedSize(32, 26)
         self.close_btn.setStyleSheet("""
-            QPushButton { background: #E74C3C; color: white; border: none; border-radius: 4px; font-weight: bold; }
+            QPushButton { background: #E74C3C; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 13px; }
             QPushButton:hover { background: #C0392B; }
         """)
         self.close_btn.clicked.connect(self.on_close)
@@ -414,6 +414,7 @@ class MainWindow(QMainWindow):
             ("Pattern Search", 4),
             ("Embedding", 5),
             ("Carte 2D", 6),
+            ("Annotations", 7),
         ]
 
         for name, idx in nav_items:
@@ -564,6 +565,27 @@ class MainWindow(QMainWindow):
         self.stop_btn.clicked.connect(self.stop_audio)
         layout.addWidget(self.stop_btn)
 
+        layout.addSpacing(6)
+
+        # Annotation button
+        self.annotate_btn = QPushButton("Annotate")
+        self.annotate_btn.setFixedSize(80, 34)
+        self.annotate_btn.setStyleSheet("""
+            QPushButton {
+                background: #9B59B6;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-weight: 600;
+                font-size: 12px;
+            }
+            QPushButton:hover { background: #8E44AD; }
+            QPushButton:disabled { background: #BDC3C7; }
+        """)
+        self.annotate_btn.clicked.connect(self.open_annotation_dialog)
+        self.annotate_btn.setToolTip("Create annotation for current audio position")
+        layout.addWidget(self.annotate_btn)
+
         layout.addSpacing(10)
 
         sep = QFrame()
@@ -648,6 +670,12 @@ class MainWindow(QMainWindow):
                 self.nav_list.setCurrentRow(self._last_nav_index)
                 self.nav_list.blockSignals(False)
                 return
+            if index == 7:
+                self.open_annotations_viewer()
+                self.nav_list.blockSignals(True)
+                self.nav_list.setCurrentRow(self._last_nav_index)
+                self.nav_list.blockSignals(False)
+                return
             self._last_nav_index = index
             self.panel_stack.setCurrentIndex(index)
             self.tabs.setCurrentIndex(0)
@@ -722,6 +750,134 @@ class MainWindow(QMainWindow):
         except ImportError as e:
             from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Erreur", f"PyQtGraph requis:\npip install pyqtgraph\n\n{e}")
+
+    def open_annotations_viewer(self):
+        """Open the annotations viewer window"""
+        try:
+            from ui.dialogs.annotations_viewer import AnnotationsViewer
+            if not hasattr(self, '_annotations_viewer') or self._annotations_viewer is None or not self._annotations_viewer.isVisible():
+                self._annotations_viewer = AnnotationsViewer(self)
+                self._annotations_viewer.load_annotation_requested.connect(self.load_annotation_audio)
+                self._annotations_viewer.show()
+            else:
+                self._annotations_viewer.raise_()
+                self._annotations_viewer.activateWindow()
+                self._annotations_viewer.load_annotations()
+        except Exception as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Error", f"Could not open annotations viewer:\n{e}")
+
+    def open_annotation_dialog(self):
+        """Open dialog to create a new annotation"""
+        from PyQt6.QtWidgets import QMessageBox
+
+        if self.audio_data is None:
+            QMessageBox.warning(self, "No Audio", "Please load an audio file first.")
+            return
+
+        # Gather current audio context
+        audio_info = self._get_current_audio_info()
+
+        try:
+            from ui.dialogs.annotation_dialog import AnnotationDialog
+            dialog = AnnotationDialog(self, audio_info)
+            dialog.annotation_saved.connect(self._on_annotation_saved)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not open annotation dialog:\n{e}")
+
+    def _get_current_audio_info(self):
+        """Get current audio context for annotation"""
+        info = {
+            'file_path': self.current_file or '',
+            'file_name': os.path.basename(self.current_file) if self.current_file else '',
+            'sample_rate': self.audio_data.get('sample_rate', 0) if self.audio_data else 0,
+            'channel': 'Mono',
+            'source_type': getattr(self.spectrogram_panel, '_source_type', 'local')
+        }
+
+        # Get viewport time range
+        if self.audio_data and 'times' in self.audio_data:
+            times = self.audio_data['times']
+            start_idx, end_idx = self.spectrogram_widget.get_viewport_indices()
+            if start_idx is not None and end_idx is not None:
+                info['start_time'] = times[start_idx]
+                info['end_time'] = times[min(end_idx, len(times) - 1)]
+            else:
+                info['start_time'] = times[0] if len(times) > 0 else 0
+                info['end_time'] = times[-1] if len(times) > 0 else 0
+
+            info['duration'] = info['end_time'] - info['start_time']
+
+        # Get frequency range if available from selection
+        if hasattr(self.spectrogram_widget, 'get_selection_freq_range'):
+            try:
+                freq_range = self.spectrogram_widget.get_selection_freq_range()
+                if freq_range:
+                    info['freq_min'] = freq_range[0]
+                    info['freq_max'] = freq_range[1]
+            except:
+                pass
+
+        # If there's a selection in pattern panel, use that info
+        if hasattr(self.pattern_panel, 'selection_meta') and self.pattern_panel.selection_meta:
+            meta = self.pattern_panel.selection_meta
+            if 'start_time' in meta:
+                info['start_time'] = meta['start_time']
+            if 'end_time' in meta:
+                info['end_time'] = meta['end_time']
+            if 'freq_min' in meta:
+                info['freq_min'] = meta['freq_min']
+            if 'freq_max' in meta:
+                info['freq_max'] = meta['freq_max']
+            info['duration'] = info.get('end_time', 0) - info.get('start_time', 0)
+
+        return info
+
+    def _on_annotation_saved(self, annotation_data):
+        """Called when an annotation is saved"""
+        self.header_status.setText(f"Annotation #{annotation_data.get('id')} saved")
+        self.header_status.setStyleSheet("color: #27AE60; font-size: 11px;")
+        # Clear status after 3 seconds
+        QTimer.singleShot(3000, lambda: self.header_status.setText(""))
+
+    def load_annotation_audio(self, annotation):
+        """Load audio file from an annotation"""
+        from PyQt6.QtWidgets import QMessageBox
+
+        file_path = annotation.get('file_path', '')
+        source_type = annotation.get('source_type', 'local')
+
+        if not file_path:
+            QMessageBox.warning(self, "Error", "No file path in annotation.")
+            return
+
+        try:
+            start_time = float(annotation.get('start_time', 0))
+            end_time = float(annotation.get('end_time', 0))
+
+            # Add some padding around the annotation
+            padding = 2.0  # seconds
+            padded_start = max(0, start_time - padding)
+            padded_end = end_time + padding
+
+            time_range = (padded_start, padded_end)
+
+            # Load the file through file panel
+            if source_type == 'database':
+                # For database files
+                self.file_panel.load_file_directly(file_path, time_range, 'database')
+            else:
+                # For local files
+                if os.path.exists(file_path):
+                    self.file_panel.load_file_directly(file_path, time_range, 'local')
+                else:
+                    QMessageBox.warning(
+                        self, "File Not Found",
+                        f"The audio file was not found:\n{file_path}\n\nIt may have been moved or deleted."
+                    )
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not load annotation audio:\n{e}")
 
     def on_selection_changed(self):
         """Called when a selection is made on the spectrogram"""
@@ -1075,24 +1231,38 @@ class MainWindow(QMainWindow):
             else:
                 self.embedding_panel.status_label.setText("Embeddings not loaded")
             return
-        self.embedding_panel.status_label.setText("Computing Perch embedding...")
+
+        # Start progress bar
+        self.embedding_panel.start_search_progress()
+        self.embedding_panel.update_search_progress(10, "Preparing audio...")
+
         sr = self.audio_data['sample_rate']
         audio = self.audio_data['audio']
         start_sample = int(start_time * sr)
         end_sample = int(end_time * sr)
         selection_audio = audio[start_sample:end_sample]
+
+        self.embedding_panel.update_search_progress(30, "Computing Perch embedding...")
         query_emb = self.compute_embedding(selection_audio, sr)
+
         if query_emb is not None:
-            self.embedding_panel.status_label.setText("Searching database...")
+            self.embedding_panel.update_search_progress(70, "Searching database...")
             results = self.embedding_manager.search(query_emb, top_k=20)
+
+            self.embedding_panel.update_search_progress(90, "Loading results...")
             self.embedding_panel.show_results(results)
             self.search_results = results
-            self.embedding_panel.status_label.setText(f"{len(results)} results found")
+
+            self.embedding_panel.update_search_progress(100, f"{len(results)} results found")
 
             # Show results in the main panel
             self.embedding_results.show_results(results)
             self.embedding_results.setVisible(True)
+
+            self.embedding_panel.finish_search_progress()
+            self.embedding_panel.status_label.setText(f"{len(results)} results found")
         else:
+            self.embedding_panel.finish_search_progress()
             self.embedding_panel.status_label.setText("Embedding computation failed")
 
     def load_perch_model(self):

@@ -730,6 +730,27 @@ class FilePanel(QWidget):
         self.info_card.setVisible(True)
         self.info_label.setText(text)
 
+    def load_file_directly(self, file_path, time_range, source_type='local'):
+        """Load a file directly (used by annotations viewer)"""
+        self.current_file = file_path
+
+        if source_type == 'local':
+            if os.path.exists(file_path):
+                try:
+                    info = sf.info(file_path)
+                    self.info_card.setVisible(True)
+                    self.info_label.setText(
+                        f"File: {os.path.basename(file_path)[:30]}\n"
+                        f"Duration: {info.duration:.1f}s\n"
+                        f"Sample rate: {info.samplerate:,} Hz"
+                    )
+                    self.file_loaded.emit(file_path, time_range, 'local')
+                except Exception as e:
+                    self.info_label.setText(f"Error: {str(e)[:50]}")
+        else:
+            # Database source
+            self.file_loaded.emit(file_path, time_range, 'database')
+
     def show_calendar_popup(self):
         """Show calendar dialog - centered and visible"""
         current_dt = self.datetime_edit.dateTime()

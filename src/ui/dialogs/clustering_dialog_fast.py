@@ -3,10 +3,14 @@ import pickle
 import numpy as np
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QSpinBox, QPushButton,
-    QFrame, QComboBox, QSlider, QLineEdit, QSizePolicy, QGroupBox
+    QFrame, QComboBox, QSlider, QLineEdit, QSizePolicy, QGroupBox,
+    QListWidget, QListWidgetItem, QSplitter
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread
-from PyQt6.QtGui import QIntValidator
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QThread, QUrl
+from PyQt6.QtGui import QIntValidator, QPixmap
+from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+import urllib.parse
+import json
 
 import pyqtgraph as pg
 pg.setConfigOptions(antialias=False, useOpenGL=True)
@@ -83,6 +87,10 @@ class ClusteringDialogFast(QDialog):
         self.colors = None
         self.audio_thread = None
         self.is_playing = False
+        self.cluster_species = {}  # Mapping cluster_id -> species name
+        self._current_species = None
+        self._image_cache = {}  # Cache pour les images
+        self._network_manager = None
 
         self.init_ui()
         QTimer.singleShot(100, self.load_data)
@@ -137,6 +145,15 @@ class ClusteringDialogFast(QDialog):
         self.size_slider.setFixedWidth(100)
         self.size_slider.valueChanged.connect(self.on_size_changed)
         tb.addWidget(self.size_slider)
+
+        self.add_sep(tb)
+
+        # Bouton pour afficher la liste des clusters annotes
+        self.show_annotated_btn = QPushButton("Clusters Annotes")
+        self.show_annotated_btn.setFixedSize(120, 32)
+        self.show_annotated_btn.setStyleSheet("background: #27AE60; color: white; border: none; border-radius: 4px; font-weight: 600;")
+        self.show_annotated_btn.clicked.connect(self.toggle_annotated_panel)
+        tb.addWidget(self.show_annotated_btn)
 
         tb.addStretch()
 
@@ -239,6 +256,23 @@ class ClusteringDialogFast(QDialog):
         self.audio_status.setWordWrap(True)
         sg.addWidget(self.audio_status)
 
+        # Espece detectee (lien cliquable)
+        self.species_label = QLabel("")
+        self.species_label.setStyleSheet("font-size: 11px; color: #16A085; padding-top: 4px;")
+        self.species_label.setWordWrap(True)
+        self.species_label.setOpenExternalLinks(True)
+        self.species_label.setTextFormat(Qt.TextFormat.RichText)
+        sg.addWidget(self.species_label)
+
+        # Image de l'espece
+        self.species_image = QLabel()
+        self.species_image.setFixedSize(120, 90)
+        self.species_image.setStyleSheet("border: 1px solid #E0E0E0; border-radius: 4px; background: #FAFAFA;")
+        self.species_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.species_image.setScaledContents(False)
+        self.species_image.setVisible(False)
+        sg.addWidget(self.species_image)
+
         lp.addWidget(seg_group)
 
         info_group = QGroupBox("Instructions")
@@ -272,13 +306,65 @@ class ClusteringDialogFast(QDialog):
             vb.setClipToView(True)
         self.plot_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        self.hover_text = pg.TextItem(text="", color=(50, 50, 50), anchor=(0, 1),
-                                       fill=pg.mkBrush(255, 255, 255, 200))
-        self.hover_text.setVisible(False)
-        self.plot_widget.addItem(self.hover_text)
-
         pf_layout.addWidget(self.plot_widget)
+
+        # Hover tooltip as QLabel overlay (not pyqtgraph TextItem)
+        self.hover_label = QLabel(self.plot_widget)
+        self.hover_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(44, 62, 80, 0.95);
+                color: white;
+                padding: 6px 10px;
+                border-radius: 4px;
+                border: 1px solid #1a252f;
+                font-size: 11px;
+            }
+        """)
+        self.hover_label.setVisible(False)
+        self.hover_label.raise_()
         content.addWidget(plot_frame, stretch=1)
+
+        # Panneau droit pour les clusters annotes (cache par defaut)
+        self.annotated_panel = QFrame()
+        self.annotated_panel.setFixedWidth(250)
+        self.annotated_panel.setStyleSheet("background: #F8F9FA; border: 1px solid #E0E0E0; border-radius: 8px;")
+        self.annotated_panel.setVisible(False)
+        ap = QVBoxLayout(self.annotated_panel)
+        ap.setContentsMargins(10, 10, 10, 10)
+        ap.setSpacing(8)
+
+        ap_header = QLabel("Clusters Annotes")
+        ap_header.setStyleSheet("font-size: 13px; font-weight: bold; color: #2C3E50; padding-bottom: 4px;")
+        ap.addWidget(ap_header)
+
+        self.annotated_list = QListWidget()
+        self.annotated_list.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #E0E0E0;
+                border-radius: 4px;
+                background: white;
+                font-size: 11px;
+            }
+            QListWidget::item {
+                padding: 6px 8px;
+                border-bottom: 1px solid #F0F0F0;
+            }
+            QListWidget::item:selected {
+                background: #3498DB;
+                color: white;
+            }
+            QListWidget::item:hover:!selected {
+                background: #EBF5FB;
+            }
+        """)
+        self.annotated_list.itemDoubleClicked.connect(self.on_annotated_cluster_clicked)
+        ap.addWidget(self.annotated_list)
+
+        ap_hint = QLabel("Double-clic pour zoomer")
+        ap_hint.setStyleSheet("font-size: 10px; color: #7F8C8D;")
+        ap.addWidget(ap_hint)
+
+        content.addWidget(self.annotated_panel)
 
         layout.addLayout(content, stretch=1)
 
@@ -307,6 +393,7 @@ class ClusteringDialogFast(QDialog):
             coords = os.path.join(base, 'embeddings_2d_ALL.npy')
             labels_f = os.path.join(base, 'labels_v2.npy')
             meta_f = os.path.join(base, 'perch_info_FINAL.pkl')
+            species_f = os.path.join(base, 'cluster_species_mapping.pkl')
             if os.path.exists(coords) and os.path.exists(labels_f):
                 try:
                     raw_emb = np.load(coords)
@@ -315,6 +402,14 @@ class ClusteringDialogFast(QDialog):
                     if os.path.exists(meta_f):
                         with open(meta_f, 'rb') as f:
                             meta = pickle.load(f)
+                    # Charger les labels BirdNET si disponibles
+                    if os.path.exists(species_f):
+                        with open(species_f, 'rb') as f:
+                            self.cluster_species = pickle.load(f)
+                        n_annotated = sum(1 for v in self.cluster_species.values() if v and v != 'Unknown')
+                        print(f"Labels BirdNET charges: {n_annotated} clusters annotes")
+                    else:
+                        self.cluster_species = {}
                     mask = raw_labels != -1
                     valid_idx = np.where(mask)[0]
                     self.embeddings_2d = raw_emb[valid_idx].astype(np.float32)
@@ -330,7 +425,8 @@ class ClusteringDialogFast(QDialog):
                     self.max_spin.setValue(min(50, self.n_clusters))
                     self.build_colors()
                     self.update_plot()
-                    self.pts_label.setText(f"{len(self.embeddings_2d):,} pts | {self.n_clusters} clusters")
+                    n_ann = sum(1 for v in self.cluster_species.values() if v and v != 'Unknown')
+                    self.pts_label.setText(f"{len(self.embeddings_2d):,} pts | {self.n_clusters} clusters | {n_ann} annotes")
                     return
                 except Exception as e:
                     self.pts_label.setText(f"Erreur: {str(e)[:30]}")
@@ -349,6 +445,39 @@ class ClusteringDialogFast(QDialog):
     def on_sample_changed(self, idx):
         self.sample_pct = [5, 10, 20, 50, 100][idx]
         self.schedule_update()
+
+    def toggle_annotated_panel(self):
+        """Affiche/cache le panneau des clusters annotes"""
+        is_visible = self.annotated_panel.isVisible()
+        self.annotated_panel.setVisible(not is_visible)
+        if not is_visible:
+            self.populate_annotated_list()
+
+    def populate_annotated_list(self):
+        """Remplit la liste des clusters annotes"""
+        self.annotated_list.clear()
+        if not self.cluster_species:
+            return
+
+        # Trier par cluster_id
+        annotated = [
+            (cid, species) for cid, species in self.cluster_species.items()
+            if species and species != 'Unknown'
+        ]
+        annotated.sort(key=lambda x: x[0])
+
+        for cid, species in annotated:
+            size = self.cluster_sizes.get(cid, 0)
+            item = QListWidgetItem(f"C{cid}: {species} ({size})")
+            item.setData(Qt.ItemDataRole.UserRole, cid)
+            self.annotated_list.addItem(item)
+
+    def on_annotated_cluster_clicked(self, item):
+        """Zoom sur le cluster selectionne dans la liste"""
+        cid = item.data(Qt.ItemDataRole.UserRole)
+        if cid is not None:
+            self.cluster_input.setText(str(cid))
+            self.zoom_to_cluster()
 
     def on_size_changed(self, val):
         self.point_size = val
@@ -433,16 +562,27 @@ class ClusteringDialogFast(QDialog):
 
     def on_hover(self, plot, points):
         if len(points) == 0:
-            self.hover_text.setVisible(False)
+            self.hover_label.setVisible(False)
             return
         local_idx = points[0].data()
         gidx = self.displayed_indices[local_idx]
         cluster = self.labels[gidx]
         cnt = self.cluster_sizes.get(cluster, 0)
+
+        # Set tooltip text
+        self.hover_label.setText(f"<b style='color:#3498DB;'>Cluster {cluster}</b><br/>{cnt:,} segments")
+
+        # Convert data coordinates to pixel coordinates
         x, y = self.embeddings_2d[gidx]
-        self.hover_text.setText(f"Cluster {cluster}\n{cnt:,} segments")
-        self.hover_text.setPos(x, y)
-        self.hover_text.setVisible(True)
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        point_pixel = vb.mapViewToScene(pg.Point(x, y))
+        point_widget = self.plot_widget.mapFromScene(point_pixel)
+
+        # Position tooltip above and to the right of cursor
+        self.hover_label.adjustSize()
+        self.hover_label.move(int(point_widget.x()) + 15, int(point_widget.y()) - self.hover_label.height() - 10)
+        self.hover_label.setVisible(True)
+        self.hover_label.raise_()
 
     def on_click(self, plot, points):
         if len(points) == 0:
@@ -467,6 +607,23 @@ class ClusteringDialogFast(QDialog):
         cluster = self.labels[gidx]
         cnt = self.cluster_sizes.get(cluster, 0)
         self.seg_cluster.setText(f"Cluster: {cluster} ({cnt:,} segments)")
+
+        # Afficher l'espece du cluster avec lien Xeno-canto
+        species = self.cluster_species.get(cluster, None)
+        if species and species != 'Unknown':
+            search_term = species.replace(' ', '+')
+            xeno_url = f"https://xeno-canto.org/explore?query={search_term}"
+            self.species_label.setText(
+                f"<b style='color:#27AE60;'>Espece:</b> {species}<br/>"
+                f"<a href='{xeno_url}' style='color:#16A085;'>Ecouter sur Xeno-canto</a>"
+            )
+            self._current_species = species
+            # Charger l'image de l'espece
+            self.load_species_image(species)
+        else:
+            self.species_label.setText("")
+            self._current_species = None
+            self.species_image.setVisible(False)
 
         if self.metadata and gidx < len(self.metadata):
             self.selected_meta = self.metadata[gidx]
@@ -577,10 +734,102 @@ class ClusteringDialogFast(QDialog):
                 self.selected_meta.get('end', 5)
             )
 
+    def load_species_image(self, species_name):
+        """Charge l'image de l'espece depuis Wikipedia"""
+        if not species_name or species_name == 'Unknown':
+            self.species_image.setVisible(False)
+            return
+
+        # Verifier le cache
+        if species_name in self._image_cache:
+            self.display_species_image(self._image_cache[species_name])
+            return
+
+        # Initialiser le network manager si necessaire
+        if self._network_manager is None:
+            self._network_manager = QNetworkAccessManager()
+
+        # Afficher un texte de chargement
+        self.species_image.setText("Chargement...")
+        self.species_image.setVisible(True)
+
+        # Requete vers l'API Wikipedia pour trouver l'image
+        search_term = urllib.parse.quote(species_name)
+        wiki_api_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{search_term}"
+
+        request = QNetworkRequest(QUrl(wiki_api_url))
+        request.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "ECOSURF/1.0")
+
+        reply = self._network_manager.get(request)
+        reply.finished.connect(lambda: self.on_wiki_response(reply, species_name))
+
+    def on_wiki_response(self, reply, species_name):
+        """Traite la reponse de l'API Wikipedia"""
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            self.species_image.setText("Image\nnon disponible")
+            reply.deleteLater()
+            return
+
+        try:
+            data = json.loads(bytes(reply.readAll()).decode('utf-8'))
+            image_url = data.get('thumbnail', {}).get('source', None)
+
+            if image_url:
+                # Telecharger l'image
+                img_request = QNetworkRequest(QUrl(image_url))
+                img_request.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "ECOSURF/1.0")
+                img_reply = self._network_manager.get(img_request)
+                img_reply.finished.connect(lambda: self.on_image_downloaded(img_reply, species_name))
+            else:
+                self.species_image.setText("Pas d'image")
+        except Exception as e:
+            self.species_image.setText("Erreur")
+        finally:
+            reply.deleteLater()
+
+    def on_image_downloaded(self, reply, species_name):
+        """Traite l'image telechargee"""
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            self.species_image.setText("Erreur image")
+            reply.deleteLater()
+            return
+
+        try:
+            image_data = bytes(reply.readAll())
+            pixmap = QPixmap()
+            if pixmap.loadFromData(image_data):
+                # Mettre en cache
+                self._image_cache[species_name] = pixmap
+                # Afficher si c'est toujours l'espece courante
+                if self._current_species == species_name:
+                    self.display_species_image(pixmap)
+            else:
+                self.species_image.setText("Format\ninvalide")
+        except Exception as e:
+            self.species_image.setText("Erreur")
+        finally:
+            reply.deleteLater()
+
+    def display_species_image(self, pixmap):
+        """Affiche l'image de l'espece avec les bonnes dimensions"""
+        if pixmap.isNull():
+            self.species_image.setText("Image vide")
+            return
+
+        # Redimensionner pour tenir dans 120x90 en gardant les proportions
+        scaled = pixmap.scaled(
+            120, 90,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
+        )
+        self.species_image.setPixmap(scaled)
+        self.species_image.setVisible(True)
+
     def closeEvent(self, event):
         if AUDIO_OK:
             sd.stop()
         self.embeddings_2d = None
         self.labels = None
         self.metadata = None
+        self._image_cache.clear()
         super().closeEvent(event)
