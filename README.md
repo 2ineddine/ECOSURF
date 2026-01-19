@@ -42,5 +42,5 @@ perch2/
 ## Lancement
 
 ```bash
-python src/main.py
+python main.py
 ```
