@@ -188,7 +188,7 @@ class SpectrogramPanel(QWidget):
         hop_label.setStyleSheet("font-size: 12px; color: #2C3E50;")
         self.hop_combo = QComboBox()
         self.hop_combo.addItems(["128", "256", "512", "1024"])
-        self.hop_combo.setCurrentText("256")
+        self.hop_combo.setCurrentText("512")
         self.hop_combo.setFixedWidth(100)
         hop_row.addWidget(hop_label)
         hop_row.addWidget(self.hop_combo)

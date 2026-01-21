@@ -19,31 +19,31 @@ import numpy as np
 PANEL_STYLE = """
 QWidget {
     font-family: 'Segoe UI', sans-serif;
-    font-size: 12px;
+    font-size: 10px;  /* reduced from 12px */
     color: #2C3E50;
     background: white;
 }
 
 /* Section Headers */
 QLabel#header {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 11px;  /* smaller */
+    font-weight: 500;
     color: #2C3E50;
-    padding: 8px 0;
-    border-bottom: 2px solid #3498DB;
-    margin-bottom: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #3498DB;
+    margin-bottom: 6px;
 }
 
 /* Compact Toggle Buttons */
 QPushButton#toggle_btn {
     background: #F8F9FA;
     border: 1px solid #E0E0E0;
-    border-radius: 6px;
-    padding: 10px 16px;
-    font-size: 11px;
+    border-radius: 5px;
+    padding: 6px 10px;  /* reduced padding */
+    font-size: 10px;
     font-weight: 500;
     color: #5D6D7E;
-    min-height: 36px;
+    min-height: 28px;  /* reduced from 36px */
 }
 QPushButton#toggle_btn:hover {
     background: #EBF5FB;
@@ -58,20 +58,20 @@ QPushButton#toggle_btn:checked, QPushButton#toggle_btn[selected="true"] {
 
 /* Primary Action Buttons */
 QPushButton#primary_btn {
-    background: #3498DB;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 10px 20px;
-    font-size: 12px;
-    font-weight: 600;
-    min-height: 38px;
+    background: #F0F0F0;  /* removed strong color */
+    color: #2C3E50;
+    border: 1px solid #D0D0D0;
+    border-radius: 5px;
+    padding: 6px 14px;
+    font-size: 10px;
+    font-weight: 500;
+    min-height: 28px;
 }
 QPushButton#primary_btn:hover {
-    background: #2980B9;
+    background: #E8E8E8;
 }
 QPushButton#primary_btn:pressed {
-    background: #1F6DA8;
+    background: #D8D8D8;
 }
 QPushButton#primary_btn:disabled {
     background: #BDC3C7;
@@ -82,128 +82,29 @@ QPushButton#secondary_btn {
     background: #F8F9FA;
     color: #2C3E50;
     border: 1px solid #E0E0E0;
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-size: 11px;
+    border-radius: 5px;
+    padding: 5px 12px;
+    font-size: 10px;
     font-weight: 500;
-}
-QPushButton#secondary_btn:hover {
-    background: #EBF5FB;
-    border-color: #3498DB;
-}
-
-/* Cards */
-QFrame#card {
-    background: #FAFBFC;
-    border: 1px solid #E8E8E8;
-    border-radius: 8px;
-    padding: 12px;
+    min-height: 28px;
 }
 
 /* Inputs */
-QComboBox {
+QComboBox, QDateTimeEdit, QSpinBox {
     background: white;
     border: 1px solid #E0E0E0;
-    border-radius: 6px;
-    padding: 8px 12px;
-    min-height: 34px;
-    font-size: 12px;
-}
-QComboBox:hover, QComboBox:focus {
-    border-color: #3498DB;
-}
-QComboBox::drop-down {
-    border: none;
-    width: 24px;
-}
-QComboBox::down-arrow {
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 6px solid #7F8C8D;
-    margin-right: 8px;
-}
-
-QDateTimeEdit {
-    background: white;
-    border: 1px solid #E0E0E0;
-    border-radius: 6px;
-    padding: 8px 12px;
-    min-height: 34px;
-    font-size: 12px;
-}
-QDateTimeEdit:hover, QDateTimeEdit:focus {
-    border-color: #3498DB;
-}
-QDateTimeEdit::drop-down {
-    border: none;
-    width: 24px;
-}
-
-QSpinBox {
-    background: white;
-    border: 1px solid #E0E0E0;
-    border-radius: 6px;
-    padding: 6px 10px;
-    min-height: 34px;
-    font-size: 12px;
-}
-QSpinBox:hover, QSpinBox:focus {
-    border-color: #3498DB;
+    border-radius: 5px;
+    padding: 4px 8px;
+    min-height: 28px;  /* shrink height */
+    font-size: 10px;   /* shrink text */
 }
 
 /* Status Labels */
-QLabel#status {
-    font-size: 11px;
-    color: #7F8C8D;
-    padding: 4px 0;
-}
-QLabel#status_success {
-    font-size: 11px;
-    color: #27AE60;
-    padding: 4px 0;
-}
-QLabel#status_error {
-    font-size: 11px;
-    color: #E74C3C;
-    padding: 4px 0;
-}
-
-/* Info Card */
-QFrame#info_card {
-    background: #EBF5FB;
-    border: 1px solid #AED6F1;
-    border-radius: 6px;
-    padding: 10px;
-}
-
-QLabel#info_text {
-    font-size: 11px;
-    color: #2471A3;
-    line-height: 1.4;
-}
-
-/* Calendar Popup Styling */
-QCalendarWidget {
-    background: white;
-    border: 1px solid #E0E0E0;
-    border-radius: 6px;
-}
-QCalendarWidget QToolButton {
-    color: #2C3E50;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    padding: 6px;
-    font-weight: 500;
-}
-QCalendarWidget QToolButton:hover {
-    background: #EBF5FB;
-}
-QCalendarWidget QTableView {
-    selection-background-color: #3498DB;
-    selection-color: white;
+QLabel#status, QLabel#status_success, QLabel#status_error, QLabel#info_text {
+    font-size: 10px;
 }
 """
+
 class CalendarDialog(QDialog):
     """Simple web-style calendar dialog"""
     date_selected = pyqtSignal(QDateTime)
@@ -614,108 +515,80 @@ class FilePanel(QWidget):
 
 
         # Date & Time Selection
-        dt_label = QLabel("Date & Time")
+        # ===== Date & Time Selection =====
+        dt_label = QLabel("Start Date & Time")
         dt_label.setStyleSheet("font-weight: 600; color: #2C3E50; margin-top: 4px;")
         s3_layout.addWidget(dt_label)
 
-        # DateTime picker with calendar button
+        # Start DateTime picker
         dt_row = QHBoxLayout()
         dt_row.setSpacing(6)
 
         self.datetime_edit = QDateTimeEdit()
         self.datetime_edit.setDisplayFormat("dd MMM yyyy  HH:mm")
-        self.datetime_edit.setCalendarPopup(False)  # Disable built-in popup
+        self.datetime_edit.setCalendarPopup(False)
         self.datetime_edit.setDateTime(QDateTime(2019, 2, 18, 16, 30))
         self.datetime_edit.setMinimumWidth(160)
         dt_row.addWidget(self.datetime_edit)
 
-        # Calendar button - plus visible avec icone
+        # Calendar button for start
         self.calendar_btn = QPushButton("Select...")
-        self.calendar_btn.clicked.connect(
-            lambda _: self.show_calendar_popup(self.datetime_edit)
-        )
         self.calendar_btn.setFixedSize(70, 34)
-        self.calendar_btn.setToolTip("Open calendar to select date")
-        self.calendar_btn.setStyleSheet("""
-            QPushButton {
-                background: #9B59B6;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: 600;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background: #8E44AD;
-            }
-            QPushButton:pressed {
-                background: #7D3C98;
-            }
-        """)
-        self.calendar_btn.clicked.connect(
-            lambda _: self.show_calendar_popup(self.datetime_edit)
-        )
-       
-
+        self.calendar_btn.setToolTip("Open calendar to select start date")
         dt_row.addWidget(self.calendar_btn)
         dt_row.addStretch()
 
         s3_layout.addLayout(dt_row)
 
-        # Duration
+        # End DateTime picker
         dt_label2 = QLabel("End Date & Time")
         dt_label2.setStyleSheet("font-weight: 600; color: #2C3E50; margin-top: 4px;")
         s3_layout.addWidget(dt_label2)
 
-        # End DateTime picker
         end_dt_row = QHBoxLayout()
         end_dt_row.setSpacing(6)
 
         self.end_datetime_edit = QDateTimeEdit()
         self.end_datetime_edit.setDisplayFormat("dd MMM yyyy  HH:mm")
         self.end_datetime_edit.setCalendarPopup(False)
-        # Set default to 15 minutes after start
-        default_end = QDateTime(2019, 2, 18, 16, 45)
+        # Set default end = start + 15 minutes
+        default_end = self.datetime_edit.dateTime().addSecs(15 * 60)
         self.end_datetime_edit.setDateTime(default_end)
         self.end_datetime_edit.setMinimumWidth(160)
         end_dt_row.addWidget(self.end_datetime_edit)
 
-        # Calendar button for end time
+        # Calendar button for end
         self.end_calendar_btn = QPushButton("Select...")
-        self.end_calendar_btn.clicked.connect(self.show_end_calendar_popup)
-
         self.end_calendar_btn.setFixedSize(70, 34)
         self.end_calendar_btn.setToolTip("Open calendar to select end date")
-        self.end_calendar_btn.setStyleSheet("""
-            QPushButton {
-                background: #E67E22;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-weight: 600;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background: #D35400;
-            }
-            QPushButton:pressed {
-                background: #BA4A00;
-            }
-        """)
-        self.end_calendar_btn.clicked.connect(self.show_end_calendar_popup)
         end_dt_row.addWidget(self.end_calendar_btn)
         end_dt_row.addStretch()
 
         s3_layout.addLayout(end_dt_row)
 
-        # Add a label to show the calculated duration
-        self.duration_label = QLabel("Duration: 15 minutes")
-        self.duration_label.setStyleSheet("font-size: 11px; color: #27AE60; font-weight: 500; margin-top: 4px;")
-        s3_layout.addWidget(self.duration_label)
+        # --- Button Styling ---
+        btn_style = """
+        QPushButton {
+            background: #F0F0F0;
+            color: #2C3E50;
+            border: 1px solid #D0D0D0;
+            border-radius: 5px;
+            font-weight: 500;
+            font-size: 10px;
+        }
+        QPushButton:hover {
+            background: #E8E8E8;
+        }
+        """
+        self.calendar_btn.setStyleSheet(btn_style)
+        self.end_calendar_btn.setStyleSheet(btn_style)
 
-        # Connect signals to update duration when dates change
-        self.datetime_edit.dateTimeChanged.connect(self.update_duration_calculation)
-        self.end_datetime_edit.dateTimeChanged.connect(self.update_duration_calculation)
+        # --- Connections ---
+        self.calendar_btn.clicked.connect(self.show_start_calendar_popup)
+        self.end_calendar_btn.clicked.connect(self.show_end_calendar_popup)
+
+       
+
 
         # Load Button
         self.load_s3_btn = QPushButton("Load Audio")
@@ -814,8 +687,16 @@ class FilePanel(QWidget):
         return sites[0]
 
     
+    
+    def show_start_calendar_popup(self):
+        dialog = CalendarDialog(self, self.datetime_edit.dateTime())
+        dialog.date_selected.connect(lambda dt: self.on_calendar_date_selected(dt, self.datetime_edit))
+        dialog.exec()
+
     def show_end_calendar_popup(self):
-        self.show_calendar_popup(self.end_datetime_edit)
+        dialog = CalendarDialog(self, self.end_datetime_edit.dateTime())
+        dialog.date_selected.connect(lambda dt: self.on_calendar_date_selected(dt, self.end_datetime_edit))
+        dialog.exec()
 
     def browse_local(self):
         """Open file browser for local files"""
@@ -887,52 +768,14 @@ class FilePanel(QWidget):
             dt = QDateTime(dt.date(), QTime(dt.time().hour(), rounded_minute))
         
         target_widget.setDateTime(dt)
-        self.update_duration_calculation()
-
-    def update_duration_calculation(self):
-        """Calculate and display duration between start and end times"""
-        start_dt = self.datetime_edit.dateTime()
-        end_dt = self.end_datetime_edit.dateTime()
-        
-        # Ensure end is after start
-        if end_dt <= start_dt:
-            # Auto-adjust: add 15 minutes to end time
-            end_dt = start_dt.addSecs(15 * 60)
-            self.end_datetime_edit.setDateTime(end_dt)
-        
-        # Calculate total seconds difference
-        total_seconds = start_dt.secsTo(end_dt)
-        
-        # Calculate minutes and hours
-        minutes = total_seconds // 60
-        hours = minutes // 60
-        remaining_minutes = minutes % 60
-        
-        # Format duration display
-        if hours > 0:
-            duration_text = f"Duration: {hours} hour{'s' if hours > 1 else ''}"
-            if remaining_minutes > 0:
-                duration_text += f" {remaining_minutes} minute{'s' if remaining_minutes > 1 else ''}"
-        else:
-            duration_text = f"Duration: {minutes} minute{'s' if minutes > 1 else ''}"
-        
-        self.duration_label.setText(duration_text)
-        
-        # Color coding based on duration
-        if minutes > 60:  # More than 1 hour
-            self.duration_label.setStyleSheet("font-size: 11px; color: #E74C3C; font-weight: 500;")
-        elif minutes > 30:  # More than 30 minutes
-            self.duration_label.setStyleSheet("font-size: 11px; color: #F39C12; font-weight: 500;")
-        else:
-            self.duration_label.setStyleSheet("font-size: 11px; color: #27AE60; font-weight: 500;")
-
+    
 
     def load_from_s3(self):
         """Load audio from S3 based on start and end time selections (15-min flexible blocks)"""
         start_dt = self.datetime_edit.dateTime()
         end_dt = self.end_datetime_edit.dateTime()
 
-        if end_dt <= start_dt:
+        if end_dt < start_dt:
             self.update_file_info("Error: End time must be after start time")
             return
 
