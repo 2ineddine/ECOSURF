@@ -40,16 +40,14 @@ class EmbeddingResultsWidget(QWidget):
         super().__init__()
         self.results = []
         self.selected_index = -1
+        self.calendar_dialog = None
+        self.all_results = []
         self.init_ui()
+
+
 
     def init_ui(self):
         self.setFixedHeight(140)
-        self.setStyleSheet("""
-            QWidget {
-                background: #FAFBFC;
-                border-top: 2px solid #3498DB;
-            }
-        """)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
@@ -74,6 +72,19 @@ class EmbeddingResultsWidget(QWidget):
         header_row.addWidget(self.info_label)
 
         header_row.addSpacing(20)
+        
+        # Calendar button (opens big yearly calendar dialog)
+        self.calendar_btn = QPushButton("Calendar")
+        self.calendar_btn.setFixedSize(80, 26)
+        self.calendar_btn.setEnabled(False)  # activé seulement quand on a des résultats
+        self.calendar_btn.setStyleSheet("""
+            QPushButton { background: #ECF0F1; color: #2C3E50; border: 1px solid #BDC3C7; border-radius: 4px; font-weight: 500; }
+            QPushButton:hover { background: #EBF5FB; border-color: #3498DB; }
+            QPushButton:disabled { color: #95A5A6; border-color: #E0E0E0; }
+        """)
+        self.calendar_btn.clicked.connect(self.open_year_calendar_dialog)
+        header_row.addWidget(self.calendar_btn)
+
 
         # Play button
         self.play_btn = QPushButton("Play")
@@ -143,6 +154,8 @@ class EmbeddingResultsWidget(QWidget):
         """Display embedding search results"""
         self.clear_results()
         self.results = results
+        self.all_results = results[:]   # garder copie pour le calendar
+        self.calendar_btn.setEnabled(len(results) > 0)
 
         for i, r in enumerate(results[:20]):
             card = self.create_result_card(i, r)
@@ -240,7 +253,64 @@ class EmbeddingResultsWidget(QWidget):
     def on_close(self):
         self.setVisible(False)
         self.close_requested.emit()
+        
+    def _parse_datetime_from_meta(self, meta: dict):
+        """
+        Extract datetime from embedding result metadata.
+        Supports:
+        - meta['datetime'] if already a datetime
+        - filename pattern: DEVICE_YYYYMMDD_HHMMSS.flac (or .wav / .mp3)
+        """
+        dt = meta.get("datetime", None)
+        if isinstance(dt, datetime):
+            return dt
 
+        filename = meta.get("file", "") or meta.get("filename", "")
+        filename = os.path.basename(str(filename))
+
+        import re
+        m = re.match(r"(\w+)_(\d{8})_(\d{6})\.(flac|wav|mp3)", filename, re.IGNORECASE)
+        if not m:
+            return None
+
+        date_str = m.group(2)
+        time_str = m.group(3)
+        try:
+            return datetime.strptime(date_str + time_str, "%Y%m%d%H%M%S")
+        except Exception:
+            return None
+
+    def open_year_calendar_dialog(self):
+        if not hasattr(self, "all_results") or not self.all_results:
+            return
+
+        # choisir l'année du meilleur résultat (top 20)
+        best_dt = None
+        best_score = -1.0
+        for r in self.all_results[:20]:
+            dt = self._parse_datetime_from_meta(r.get("metadata", {}))
+            if dt is None:
+                continue
+            score = float(r.get("similarity", 0.0)) * 100.0
+            if score > best_score:
+                best_score = score
+                best_dt = dt
+
+        year = best_dt.year if best_dt else datetime.now().year
+
+        # si déjà ouvert, ramener au premier plan
+        if self.calendar_dialog is not None and self.calendar_dialog.isVisible():
+            self.calendar_dialog.raise_()
+            self.calendar_dialog.activateWindow()
+            return
+
+        # ouvrir la grande fenêtre
+        from ui.dialogs.calendar_year_dialog import CalendarYearDialog
+        dlg = CalendarYearDialog(self.all_results, year=year, parent=self)
+        self.calendar_dialog = dlg
+        dlg.show()
+
+        
     def clear_results(self):
         """Clear all results"""
         while self.results_layout.count() > 1:
@@ -249,6 +319,8 @@ class EmbeddingResultsWidget(QWidget):
                 item.widget().deleteLater()
         self.results = []
         self.selected_index = -1
+        self.all_results = []
+        self.calendar_btn.setEnabled(False)
         self.count_label.setText("0 results")
         self.info_label.setText("")
         self.play_btn.setEnabled(False)
