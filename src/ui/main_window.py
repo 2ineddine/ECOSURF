@@ -260,6 +260,9 @@ class EmbeddingResultsWidget(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(base_dir, "final_icon.png")
+        self.setWindowIcon(QIcon(icon_path))
         self.setWindowTitle("ECOSURF - Bioacoustic Analysis")
         self.setGeometry(50, 50, 1600, 900)
         self.setStyleSheet(GLOBAL_STYLE)
