@@ -266,10 +266,15 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("ECOSURF - Bioacoustic Analysis")
         self.setGeometry(50, 50, 1600, 900)
         self.setStyleSheet(GLOBAL_STYLE)
-
+        self.current_period_duration = None  # Duration in seconds
+        self.current_period_files = []  # List of files in current period
+        self.all_available_files = []  # All files for navigation
+        self.file_time_map = {}  # Maps filename to datetime
         self.current_file = None
         self.current_time_range = None
         self.audio_data = None
+        self.source_type = "local"
+
         self.file_list = []
         self.audio_thread = None
         self.playing = False
@@ -606,6 +611,7 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         # Reset view button
+        # Previous period button
         reset_btn = QPushButton("Reset View")
         reset_btn.setFixedSize(80, 30)
         reset_btn.clicked.connect(self.on_zoom_reset)
@@ -621,6 +627,51 @@ class MainWindow(QMainWindow):
         """)
         layout.addWidget(reset_btn)
 
+        # ADD THESE TWO BUTTONS:
+        # Previous period button
+        self.prev_period_btn = QPushButton("◀ Prev")
+        self.prev_period_btn.setFixedSize(65, 28)
+        self.prev_period_btn.clicked.connect(self.on_prev_period)
+        self.prev_period_btn.setEnabled(False)
+        self.prev_period_btn.setStyleSheet("""
+            QPushButton {
+                background: #3498DB;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover { background: #2980B9; }
+            QPushButton:disabled { 
+                background: #BDC3C7; 
+                color: #7F8C8D;
+            }
+        """)
+        layout.addWidget(self.prev_period_btn)
+
+        # Next period button
+        self.next_period_btn = QPushButton("Next ▶")
+        self.next_period_btn.setFixedSize(65, 28)
+        self.next_period_btn.clicked.connect(self.on_next_period)
+        self.next_period_btn.setEnabled(False)
+        self.next_period_btn.setStyleSheet("""
+            QPushButton {
+                background: #3498DB;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover { background: #2980B9; }
+            QPushButton:disabled { 
+                background: #BDC3C7; 
+                color: #7F8C8D;
+            }
+        """)
+        layout.addWidget(self.next_period_btn)
+
         layout.addSpacing(10)
 
         self.toolbar_status = QLabel("")
@@ -628,6 +679,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.toolbar_status)
 
         return toolbar
+
 
     def create_inspector(self):
         inspector = QFrame()
@@ -702,6 +754,9 @@ class MainWindow(QMainWindow):
             self.toggle_inspector_btn.setText("Panel <<")
 
     def connect_signals(self):
+
+        self.file_panel.search_scope_changed.connect(self.on_search_scope_changed)
+
         self.file_panel.file_loaded.connect(self.on_file_loaded_with_source)
         self.file_panel.search_scope_changed.connect(self.on_search_scope_changed)
         self.file_panel.period_dict_loaded.connect(self.on_period_dict_loaded)
@@ -899,6 +954,17 @@ class MainWindow(QMainWindow):
         self.current_time_range = time_range
         self.spectrogram_panel.set_current_file(file_path, time_range)
         self.spectrogram_panel.set_source_type(source_type)
+        
+        # Store period info if it's multiple files
+        if isinstance(file_path, list):
+            self.current_period_files = file_path
+            if time_range and len(time_range) == 2:
+                self.current_period_duration = time_range[1] - time_range[0]
+            
+            # Enable navigation
+            self.prev_period_btn.setEnabled(True)
+            self.next_period_btn.setEnabled(True)
+        
         if isinstance(file_path, list):
             self.header_file.setText(f"{len(file_path)} files selected")
         else:
@@ -908,6 +974,14 @@ class MainWindow(QMainWindow):
     def on_folder_loaded(self, file_list):
         self.file_list = file_list
         self.search_panel.set_file_list(file_list)
+        
+        # Store all available files
+        self.all_available_files = file_list
+        
+        # Enable navigation buttons
+        if file_list and len(file_list) > 1:
+            self.prev_period_btn.setEnabled(True)
+            self.next_period_btn.setEnabled(True)
 
     def on_spectrogram_computed(self, audio_data):
         if audio_data is None:
@@ -950,8 +1024,22 @@ class MainWindow(QMainWindow):
             self.view_panel.disable_zoom()
 
     def on_search_scope_changed(self, scope_type, file_list):
-        if hasattr(self, 'search_panel') and hasattr(self.search_panel, 'set_search_scope'):
-            self.search_panel.set_search_scope(scope_type, file_list)
+        """Handle when file panel emits available files for navigation"""
+        print(f"DEBUG: Search scope changed: {scope_type}, {len(file_list)} files")
+        
+        if file_list:
+            # Store all available files for navigation
+            self.all_available_files = file_list
+            print(f"DEBUG: First 5 files: {file_list[:5]}")
+            print(f"DEBUG: Last 5 files: {file_list[-5:]}")
+            
+            # Enable navigation buttons
+            self.prev_period_btn.setEnabled(True)
+            self.next_period_btn.setEnabled(True)
+        else:
+            self.all_available_files = []
+            self.prev_period_btn.setEnabled(False)
+            self.next_period_btn.setEnabled(False)
 
     def on_rect_mode_toggled(self, enabled):
         if enabled:
@@ -1372,3 +1460,257 @@ class MainWindow(QMainWindow):
             self.pattern_panel.change_brush_size(+2)
             return
         super().keyPressEvent(event)
+
+    def on_next_period(self):
+        """Load next period - move forward by same number of files"""
+        print("=" * 50)
+        print("DEBUG: NEXT PERIOD CLICKED")
+        print(f"DEBUG: Current period has {len(self.current_period_files)} files")
+        print(f"DEBUG: All available files: {len(self.all_available_files)}")
+        
+        if not self.current_period_files:
+            print("DEBUG ERROR: No current period files")
+            return
+        
+        if not self.all_available_files:
+            print("DEBUG ERROR: No available files list")
+            return
+        
+        # Get number of files in current period
+        period_file_count = len(self.current_period_files)
+        print(f"DEBUG: Current period length: {period_file_count} files")
+        
+        # Get last file of current period
+        last_file = self.current_period_files[-1]
+        print(f"DEBUG: Last file in current period: {last_file}")
+        
+        try:
+            # Find index in all available files
+            current_idx = self.all_available_files.index(last_file)
+            print(f"DEBUG: Last file index in all files: {current_idx}")
+            
+            # Calculate next start index (after the last file)
+            next_start_idx = current_idx + 1
+            print(f"DEBUG: Next start index: {next_start_idx}")
+            
+            # Check if we have enough files ahead
+            files_available = len(self.all_available_files) - next_start_idx
+            print(f"DEBUG: Files available ahead: {files_available}")
+            
+            if files_available == 0:
+                print("DEBUG: Already at the end of available files")
+                return
+            
+            # Take either the same number of files or whatever is available
+            files_to_take = min(period_file_count, files_available)
+            print(f"DEBUG: Will take {files_to_take} files")
+            
+            # Get the new file list
+            new_file_list = self.all_available_files[next_start_idx:next_start_idx + files_to_take]
+            print(f"DEBUG: New file list ({len(new_file_list)} files):")
+            for i, f in enumerate(new_file_list):
+                print(f"  [{i}] {f}")
+            
+            # Load the new period
+            self._load_new_period(new_file_list)
+            
+        except ValueError as e:
+            print(f"DEBUG ERROR: Last file '{last_file}' not found in all_available_files")
+            print(f"DEBUG: First few all_available_files: {self.all_available_files[:10]}")
+
+    def on_prev_period(self):
+        """Load previous period - move back by same number of files"""
+        print("=" * 50)
+        print("DEBUG: PREVIOUS PERIOD CLICKED")
+        print(f"DEBUG: Current period has {len(self.current_period_files)} files")
+        print(f"DEBUG: All available files: {len(self.all_available_files)}")
+        
+        if not self.current_period_files:
+            print("DEBUG ERROR: No current period files")
+            return
+        
+        if not self.all_available_files:
+            print("DEBUG ERROR: No available files list")
+            return
+        
+        # Get number of files in current period
+        period_file_count = len(self.current_period_files)
+        print(f"DEBUG: Current period length: {period_file_count} files")
+        
+        # Get first file of current period
+        first_file = self.current_period_files[0]
+        print(f"DEBUG: First file in current period: {first_file}")
+        
+        try:
+            # Find index in all available files
+            current_idx = self.all_available_files.index(first_file)
+            print(f"DEBUG: First file index in all files: {current_idx}")
+            
+            if current_idx == 0:
+                print("DEBUG: Already at the beginning of available files")
+                return
+            
+            # Calculate previous start index (move back by same number of files)
+            prev_start_idx = max(0, current_idx - period_file_count)
+            print(f"DEBUG: Previous start index: {prev_start_idx}")
+            
+            # Get the new file list
+            new_file_list = self.all_available_files[prev_start_idx:prev_start_idx + period_file_count]
+            print(f"DEBUG: New file list ({len(new_file_list)} files):")
+            for i, f in enumerate(new_file_list):
+                print(f"  [{i}] {f}")
+            
+            # Check if this is the same as current (shouldn't happen)
+            if new_file_list == self.current_period_files:
+                print("DEBUG: New list is same as current, moving back one more file")
+                if prev_start_idx > 0:
+                    prev_start_idx = max(0, prev_start_idx - 1)
+                    new_file_list = self.all_available_files[prev_start_idx:prev_start_idx + period_file_count]
+            
+            # Load the new period
+            self._load_new_period(new_file_list)
+            
+        except ValueError as e:
+            print(f"DEBUG ERROR: First file '{first_file}' not found in all_available_files")
+            print(f"DEBUG: First few all_available_files: {self.all_available_files[:10]}")
+    
+    def _load_new_period(self, file_list):
+        """Load and display a new period"""
+        print(f"DEBUG: Loading new period with {len(file_list)} files")
+        
+        if not file_list:
+            print("DEBUG ERROR: Empty file list")
+            return
+        
+        # Update current files
+        self.current_period_files = file_list
+        
+        # Extract site and date from first file
+        first_file = file_list[0]
+        parts = first_file.split('_')
+        if len(parts) >= 3:
+            self.current_site = parts[0]
+            self.current_date = parts[1]
+            print(f"DEBUG: New period - Site: {self.current_site}, Date: {self.current_date}")
+        
+        # Calculate time range
+        # Each file is 60 seconds (1 minute)
+        total_seconds = len(file_list) * 60
+        time_range = (0, total_seconds)
+        
+        # Get time range for display
+        start_time, end_time = self._get_time_range_from_files(file_list)
+        
+        # Update UI
+        self.header_file.setText(f"{len(file_list)} files ({self.current_site} - {self.current_date})")
+        self.toolbar_status.setText(f"Period: {start_time} to {end_time} ({len(file_list)} files)")
+        
+        # Load through spectrogram panel
+        source_type = getattr(self.spectrogram_panel, 'source_type', 'database')
+        self.spectrogram_panel.set_current_file(file_list, time_range)
+        self.spectrogram_panel.set_source_type(source_type)
+        
+        # Compute spectrogram
+        print("DEBUG: Computing spectrogram for new period...")
+        self.spectrogram_panel.compute_spectrogram()
+        
+        print(f"DEBUG: New period loaded successfully")
+
+    def _get_all_files_for_current_site_date(self):
+        """Get all files for current site and date"""
+        if not self.current_site or not self.current_date:
+            return
+        
+        print(f"DEBUG: Getting all files for {self.current_site} on {self.current_date}")
+        
+        try:
+            # The file panel should have emitted these via search_scope_changed
+            # If not, we need to generate them
+            
+            # Generate all possible 15-minute slots for this date
+            all_possible_files = []
+            
+            # Parse date from current_date string (YYYYMMDD)
+            year = int(self.current_date[0:4])
+            month = int(self.current_date[4:6])
+            day = int(self.current_date[6:8])
+            
+            # Create QDate object
+            date = QDate(year, month, day)
+            
+            # Generate files for all 24 hours in 15-minute increments
+            for hour in range(24):
+                for minute in [0, 15, 30, 45]:  # 15-minute intervals
+                    time_str = f"{hour:02d}{minute:02d}00"
+                    filename = f"{self.current_site}_{self.current_date}_{time_str}.flac"
+                    all_possible_files.append(filename)
+            
+            print(f"DEBUG: Generated {len(all_possible_files)} possible time slots")
+            
+            # Now filter to only include files that exist
+            self.all_available_files = []
+            period_dict = self.file_panel.period_dict
+            
+            for filename in all_possible_files:
+                # Check if file exists in period_dict
+                parts = filename.split('_')
+                if len(parts) >= 3:
+                    date_part = parts[1]
+                    time_part = parts[2].replace('.flac', '')
+                    if len(date_part) == 8 and len(time_part) == 6:
+                        year = date_part[0:4]
+                        month = date_part[4:6]
+                        day = date_part[6:8]
+                        hour = time_part[0:2]
+                        minute = time_part[2:4]
+                        period_key = f"{year}-{month}-{day}_{hour}:{minute}"
+                        
+                        if period_key in period_dict:
+                            self.all_available_files.append(filename)
+            
+            print(f"DEBUG: Found {len(self.all_available_files)} existing files")
+            
+            # Sort by time
+            self.all_available_files.sort()
+            
+            # Debug: show first few files
+            if self.all_available_files:
+                print(f"DEBUG: First 5 files: {self.all_available_files[:5]}")
+                print(f"DEBUG: Last 5 files: {self.all_available_files[-5:]}")
+            
+            self._update_navigation_buttons()
+            
+        except Exception as e:
+            print(f"Error getting files for navigation: {e}")
+
+    def _get_time_range_from_files(self, file_list):
+        """Calculate start and end times from a list of files"""
+        if not file_list:
+            return ("00:00", "00:00")
+        
+        # Files are named like: S4A09154_20190218_163000.flac
+        def parse_time_from_filename(filename):
+            parts = filename.split('_')
+            if len(parts) >= 3:
+                time_str = parts[2].replace('.flac', '')[:4]  # HHMM
+                if len(time_str) == 4:
+                    hour = int(time_str[0:2])
+                    minute = int(time_str[2:4])
+                    return hour, minute
+            return 0, 0
+        
+        first_file = file_list[0]
+        last_file = file_list[-1]
+        
+        start_hour, start_minute = parse_time_from_filename(first_file)
+        
+        # For end time, add 1 minute for each file (since each is 1 minute long)
+        end_hour, end_minute = parse_time_from_filename(last_file)
+        end_minute += 1  # Each file is 1 minute
+        
+        if end_minute >= 60:
+            end_hour += 1
+            end_minute -= 60
+        
+        return (f"{start_hour:02d}:{start_minute:02d}", 
+                f"{end_hour:02d}:{end_minute:02d}")

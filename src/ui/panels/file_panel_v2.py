@@ -771,7 +771,9 @@ class FilePanel(QWidget):
     
 
     def load_from_s3(self):
-        """Load audio from S3 based on start and end time selections (15-min flexible blocks)"""
+        """Load audio from S3 based on start and end time selections"""
+        print(f"DEBUG: load_from_s3 called")
+        
         start_dt = self.datetime_edit.dateTime()
         end_dt = self.end_datetime_edit.dateTime()
 
@@ -784,38 +786,91 @@ class FilePanel(QWidget):
 
         # --- Snap start & end to 15-minute grid ---
         def snap_to_15(dt):
-            m = (dt.time().minute() // 15) * 15
-            return QDateTime(dt.date(), QTime(dt.time().hour(), m))
+            # Round DOWN to nearest 15 minutes
+            minute = dt.time().minute()
+            snapped_minute = (minute // 15) * 15
+            return QDateTime(dt.date(), QTime(dt.time().hour(), snapped_minute))
 
         start_dt = snap_to_15(start_dt)
         end_dt = snap_to_15(end_dt)
 
-        # --- Generate one file per 15-minute slot ---
-        files = []
+        # --- Generate files for the selected period ---
+        selected_files = []
         current_dt = start_dt
-
+        
         while current_dt < end_dt:
             date_str = current_dt.toString("yyyyMMdd")
             time_str = current_dt.toString("HHmmss")
-            files.append(f"{site}_{date_str}_{time_str}.flac")
-            current_dt = current_dt.addSecs(15 * 60)
+            filename = f"{site}_{date_str}_{time_str}.flac"
+            selected_files.append(filename)
+            current_dt = current_dt.addSecs(15 * 60)  # Add 15 minutes
 
         # --- Full playback range ---
-        total_seconds = start_dt.secsTo(end_dt)
-        time_range = (0, total_seconds)
+        # Each file is 60 seconds (1 minute)
+        total_audio_seconds = len(selected_files) * 60.0
+        time_range = (0, total_audio_seconds)
+        
+        print(f"DEBUG: Selected {len(selected_files)} files for period")
+        print(f"DEBUG: First file: {selected_files[0] if selected_files else 'None'}")
+        print(f"DEBUG: Last file: {selected_files[-1] if selected_files else 'None'}")
+        
+        # Store current period info in the panel
+        self.current_period_files = selected_files
+        self.current_site = site
+        self.current_date = start_dt.toString("yyyyMMdd")
 
-        # Emit
-        if len(files) == 1:
-            self.file_loaded.emit(files[0], time_range, 'database')
+        # Emit the files to load
+        if len(selected_files) == 1:
+            self.file_loaded.emit(selected_files[0], time_range, 'database')
         else:
-            self.file_loaded.emit(files, time_range, 'database')
+            self.file_loaded.emit(selected_files, time_range, 'database')
+        
+        # Get ALL files for this day for navigation
+        self._emit_all_files_for_day(site, start_dt.date())
 
         # UI info
         self.info_card.setVisible(True)
         self.info_label.setText(
             f"Site: {site}\n"
-            f"Start: {start_dt.toString('dd MMM yyyy HH:mm')}\n"
-            f"End: {end_dt.toString('dd MMM yyyy HH:mm')}\n"
-            f"Files loaded: {len(files)}"
+            f"Date: {start_dt.toString('dd MMM yyyy')}\n"
+            f"Time: {start_dt.toString('HH:mm')} - {end_dt.toString('HH:mm')}\n"
+            f"Files: {len(selected_files)} (1 min each)\n"
+            f"Total audio: {total_audio_seconds/60:.1f} min"
         )
 
+    def _emit_all_files_for_day(self, site, date):
+        """Get all files for a specific day and emit for navigation"""
+        try:
+            # Get all timestamps for this day from period_dict
+            date_str = date.toString("yyyy-MM-dd")
+            print(f"DEBUG: Looking for files on {date_str} for site {site}")
+            
+            # Filter period_dict for this date and site
+            all_files_for_day = []
+            
+            for period_key, info in self.period_dict.items():
+                # Check if this entry matches the date and site
+                if period_key.startswith(date_str):
+                    if info.get('device') == site:
+                        # Extract filename from s3_uri
+                        s3_uri = info.get('s3_uri', '')
+                        if s3_uri:
+                            # Extract filename like S4A09154_20190218_164500.flac
+                            filename = s3_uri.split('/')[-1]
+                            all_files_for_day.append(filename)
+            
+            # Sort by time
+            all_files_for_day.sort()
+            
+            print(f"DEBUG: Found {len(all_files_for_day)} files for {date_str}")
+            if all_files_for_day:
+                print(f"DEBUG: First: {all_files_for_day[0]}")
+                print(f"DEBUG: Last: {all_files_for_day[-1]}")
+            
+            # Emit for navigation
+            self.search_scope_changed.emit('day', all_files_for_day)
+            
+        except Exception as e:
+            print(f"Error getting files for day: {e}")
+            import traceback
+            traceback.print_exc()

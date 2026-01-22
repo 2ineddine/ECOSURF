@@ -26,7 +26,7 @@ def apply_mask_and_reconstruct(
     stft_complex: np.ndarray,
     mask: np.ndarray,
     *,
-    mask_type: str = "hard",
+    mask_type: str = "soft",
     hop_length: int = 512,
     n_fft: int = 2048,
     length: Optional[int] = None,
@@ -70,7 +70,7 @@ def extract_patch_audio(
     hop_length: int = 512,
     n_fft: int = 2048,
     time_offset: float = 0.0,
-    mask_type: str = "hard",
+    mask_type: str = "soft",
     length: Optional[int] = None,
 ) -> Tuple[np.ndarray, Dict]:
     if stft_complex is None:
